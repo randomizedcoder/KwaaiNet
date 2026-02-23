@@ -451,22 +451,13 @@ async fn announce(
     Ok(())
 }
 
-/// Connect to the first bootstrap peer and send a STORE request.
+/// Connect to all bootstrap peers and send a STORE request to each.
 async fn send_to_bootstrap(
     client: &mut kwaai_p2p_daemon::P2PClient,
     bootstrap_peers: &[String],
     req: StoreRequest,
 ) {
-    let Some(addr) = bootstrap_peers.first() else { return };
-
-    match client.connect_peer(addr).await {
-        Err(e) => { warn!("Bootstrap connect failed: {}", e); return; }
-        Ok(_) => {}
-    }
-    tokio::time::sleep(Duration::from_secs(2)).await;
-
-    let Some(peer_id_str) = addr.split("/p2p/").nth(1) else { return };
-    let Ok(bp) = peer_id_str.parse::<PeerId>() else { return };
+    if bootstrap_peers.is_empty() { return; }
 
     use prost::Message;
     let mut bytes = Vec::new();
@@ -475,15 +466,38 @@ async fn send_to_bootstrap(
         return;
     }
 
-    match client.call_unary_handler(&bp.to_bytes(), "DHTProtocol.rpc_store", &bytes).await {
-        Ok(resp_bytes) => {
-            use kwaai_hivemind_dht::protocol::StoreResponse;
-            if let Ok(resp) = StoreResponse::decode(&resp_bytes[..]) {
-                let ok = resp.store_ok.iter().filter(|&&s| s).count();
-                info!("STORE response: {}/{} stored", ok, resp.store_ok.len());
-            }
+    let mut succeeded = 0usize;
+    for addr in bootstrap_peers {
+        let Some(peer_id_str) = addr.split("/p2p/").nth(1) else {
+            warn!("Bootstrap peer has no /p2p/ component: {}", addr);
+            continue;
+        };
+        let bp = match peer_id_str.parse::<PeerId>() {
+            Ok(p) => p,
+            Err(e) => { warn!("Invalid peer ID in {}: {}", addr, e); continue; }
+        };
+
+        if let Err(e) = client.connect_peer(addr).await {
+            warn!("Bootstrap connect failed ({}): {}", addr, e);
+            continue;
         }
-        Err(e) => warn!("STORE RPC failed: {}", e),
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        match client.call_unary_handler(&bp.to_bytes(), "DHTProtocol.rpc_store", &bytes).await {
+            Ok(resp_bytes) => {
+                use kwaai_hivemind_dht::protocol::StoreResponse;
+                if let Ok(resp) = StoreResponse::decode(&resp_bytes[..]) {
+                    let ok = resp.store_ok.iter().filter(|&&s| s).count();
+                    info!("STORE response from {}: {}/{} stored", peer_id_str, ok, resp.store_ok.len());
+                    if ok > 0 { succeeded += 1; }
+                }
+            }
+            Err(e) => warn!("STORE RPC failed ({}): {}", addr, e),
+        }
+    }
+
+    if succeeded == 0 {
+        warn!("DHT STORE failed on all {} bootstrap peers", bootstrap_peers.len());
     }
 }
 
