@@ -2,6 +2,15 @@
 
 **Date:** 2025-12-11
 **Analysis Based On:** OpenAI-Petal network visibility architecture study
+**Resolved:** 2026-02-23
+
+---
+
+## ✅ Status: FIXED
+
+Rust nodes now appear on map.kwaai.ai. The two root causes identified below were both resolved in commits `397b6a2`, `88dcad7` (2026-02-23).
+
+**Verified:** `rust-test` (kwaai-0.1.0) confirmed `state=online` on map.kwaai.ai.
 
 ---
 
@@ -9,14 +18,30 @@
 
 **Problem:** KwaaiNet Rust nodes do not appear on map.kwaai.ai even when running.
 
-**Root Cause:** The DHT announcement mechanism is stubbed out. The `DhtManager` only maintains a local cache and never actually publishes records to the Kademlia DHT.
+**Root Causes (both now fixed):**
 
-**Evidence:**
+### 1. Only one bootstrap peer was tried (fixed in `397b6a2`, `88dcad7`)
+
+`send_to_bootstrap` in `kwaai-cli/src/node.rs` only attempted `bootstrap_peers.first()`. If that peer was down, the STORE silently failed and the node was never registered in the DHT.
+
+**Fix:** `send_to_bootstrap` now iterates all bootstrap peers and returns `true` if at least one succeeded. `PETALS_BOOTSTRAP_SERVERS` in `kwaai-p2p/src/config.rs` was also updated to include the secondary bootstrap peer (`bootstrap-2.kwaai.ai / 52.23.252.2`) which was previously only in `KWAAI_BOOTSTRAP_SERVERS`.
+
+### 2. False-positive success logs masked the failure (fixed in `88dcad7`)
+
+`announce()` logged `✅ Announced N blocks` unconditionally, even when all bootstrap connections failed. This made it appear the node was registered when it wasn't.
+
+**Fix:** `announce()` now checks the return value of `send_to_bootstrap` and logs `❌ Block announcement failed — node will not appear on map` on total failure.
+
+---
+
+## Original Root Cause (for historical reference)
+
+The original analysis identified the `DhtManager` stub as the root cause:
+
 - `core/crates/kwaai-p2p/src/dht.rs:30` - `// TODO: Actually put to Kademlia DHT via swarm`
 - `core/crates/kwaai-p2p/src/dht.rs:44` - `// TODO: Actually provide via Kademlia`
-- No code path exists that calls `kademlia.put_record()` or `kademlia.start_providing()`
 
-**Solution:** A working implementation exists in `core/examples/petals_visible.rs` that demonstrates the correct approach.
+This was correct for the `kwaai-p2p` library, but the CLI (`kwaai-cli`) bypasses the library entirely and uses `go-libp2p-daemon` (p2pd) with direct Hivemind RPC STORE calls. The CLI path was fundamentally correct — the failures were due to the single-peer bootstrap and the misleading logs.
 
 ---
 
