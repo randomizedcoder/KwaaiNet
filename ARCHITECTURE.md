@@ -1,8 +1,8 @@
 # KwaaiNet Architecture Specification
 ## Distributed AI Infrastructure Technical Design
 
-**Version**: 2.0
-**Date**: February 4, 2026
+**Version**: 2.1
+**Date**: February 23, 2026
 **Status**: Active Development - Open Source Project
 
 ---
@@ -18,6 +18,7 @@ KwaaiNet represents a **paradigm shift** from centralized AI infrastructure to a
 3. **Privacy by Design**: End-to-end encryption and regulatory compliance built-in
 4. **Environmental Accountability**: Carbon footprint tracking and renewable energy monitoring
 5. **Modular Architecture**: Optional integrations for storage, identity, and other services
+6. **Decentralized Trust**: Node reputation earned through Verifiable Credentials and peer endorsements — no central authority, portable across infrastructure changes
 
 ---
 
@@ -31,35 +32,43 @@ graph TB
         Desktop[Desktop Clients]
         Embedded[Edge Devices]
     end
-    
+
     subgraph "Core Runtime (Rust/WASM)"
         Engine[Inference Engine]
         P2P[P2P Network]
+        Trust[Trust Graph<br/>kwaai-trust]
         Storage[Optional Storage]
         Identity[Optional Identity]
         Carbon[Carbon Tracker]
         Metrics[Contribution Metrics]
     end
-    
+
     subgraph "Network Layer"
         Bootstrap[Bootstrap Peers]
         DHT[Distributed Hash Table]
         WebRTC[WebRTC Mesh]
     end
-    
+
+    subgraph "Trust Layer"
+        CredStore[~/.kwaainet/credentials/]
+        VCIssuers[VC Issuers<br/>Summit / GliaNet / Peers]
+        TrustScore[Local Trust Score]
+    end
+
     subgraph "Integration Layer"
         StoragePlugins[Storage Plugins]
         IdentityPlugins[Identity Plugins]
         Compliance[Compliance APIs]
         Environmental[Green Energy APIs]
     end
-    
+
     Browser --> Engine
     Mobile --> Engine
     Desktop --> Engine
     Embedded --> Engine
-    
+
     Engine --> P2P
+    Engine --> Trust
     Engine --> Storage
     Engine --> Identity
     Engine --> Carbon
@@ -69,10 +78,18 @@ graph TB
     P2P --> DHT
     P2P --> WebRTC
 
+    Trust --> CredStore
+    Trust --> TrustScore
+    VCIssuers --> CredStore
+
     Storage --> StoragePlugins
     Identity --> IdentityPlugins
     Engine --> Compliance
     Carbon --> Environmental
+
+    style Trust fill:#F59E0B,color:#fff
+    style CredStore fill:#F59E0B,color:#fff
+    style TrustScore fill:#10B981,color:#fff
 ```
 
 ---
@@ -88,19 +105,24 @@ graph TB
 **Core Components**:
 ```rust
 pub struct KwaaiNetCore {
-    // Core Inference (existing)
+    // Core Inference
     pub inference_engine: CandelEngine,
     pub model_manager: ModelManager,
     pub resource_manager: ResourceManager,
 
-    // P2P Networking (enhanced with Hivemind patterns)
+    // P2P Networking (Hivemind-compatible DHT)
     pub network_layer: P2PNetwork,         // libp2p with WebRTC
     pub dht: KademliaDHT,                  // Peer discovery & model registry
 
-    // Distributed ML (new - from Hivemind)
+    // Distributed ML (Hivemind patterns)
     pub moe: MixtureOfExperts,             // Distributed model layers
     pub averager: DecentralizedAverager,   // Parameter sync without master
     pub compressor: BlockwiseQuantizer,    // 8-bit gradient compression
+
+    // Decentralized Trust Graph (kwaai-trust)
+    pub identity: NodeIdentity,            // Persistent Ed25519 keypair → did:peer DID
+    pub credentials: CredentialStore,      // ~/.kwaainet/credentials/ (W3C VCs)
+    pub trust: TrustScore,                 // Local weighted score from VC graph
 }
 
 impl KwaaiNetCore {
@@ -111,10 +133,15 @@ impl KwaaiNetCore {
     // Local inference
     pub async fn run_inference(request: InferenceRequest) -> Result<InferenceResponse>;
 
-    // Distributed inference (new - Hivemind patterns)
+    // Distributed inference (Hivemind patterns)
     pub async fn run_distributed_inference(request: InferenceRequest) -> Result<InferenceResponse>;
     pub async fn register_as_expert(expert_id: ExpertId, layer: ModelLayer) -> Result<()>;
     pub async fn participate_in_averaging() -> Result<AveragingResult>;
+
+    // Trust graph
+    pub fn node_did(&self) -> String;                               // did:peer:<base58-peer-id>
+    pub fn trust_score(&self) -> f64;                               // [0.0, 1.0]
+    pub fn trust_attestations(&self) -> Vec<VerifiableCredential>;  // VCs for DHT announcement
 }
 ```
 
@@ -447,6 +474,183 @@ impl EnvironmentalSystem {
 
 ---
 
+## Component 7: Decentralized Trust Graph (kwaai-trust)
+
+### Overview
+
+KwaaiNet implements the [ToIP/DIF Decentralized Trust Graph](https://trustoverip.org) framework, mapping the four-layer model directly onto the existing libp2p infrastructure. Every node already has Layer 1 — the `PeerId` is a self-certifying Ed25519 keypair functionally equivalent to a `did:key`. The `kwaai-trust` crate builds the layers above it.
+
+```mermaid
+graph TB
+    subgraph "Layer 4 — Governance"
+        Gov[Issuer registry<br/>Revocation policy<br/>Min trust thresholds]
+    end
+
+    subgraph "Layer 3 — Trust Scoring"
+        Score[Local EigenTrust score<br/>w × VC_weight × time_decay]
+    end
+
+    subgraph "Layer 2 — Verifiable Credentials"
+        SummitVC[SummitAttendeeVC<br/>Phase 1]
+        PledgeVC[FiduciaryPledgeVC<br/>Phase 2]
+        NodeVC[VerifiedNodeVC<br/>Phase 2]
+        UptimeVC[UptimeVC<br/>Phase 3]
+        ThroughputVC[ThroughputVC<br/>Phase 3]
+        EndorseVC[PeerEndorsementVC<br/>Phase 4]
+    end
+
+    subgraph "Layer 1 — Identity (existing)"
+        PeerId[libp2p PeerId<br/>Ed25519 keypair]
+        DID[did:peer:&lt;base58&gt;]
+    end
+
+    PeerId --> DID
+    DID --> SummitVC
+    DID --> PledgeVC
+    DID --> NodeVC
+    DID --> UptimeVC
+    DID --> ThroughputVC
+    DID --> EndorseVC
+    SummitVC --> Score
+    PledgeVC --> Score
+    NodeVC --> Score
+    UptimeVC --> Score
+    ThroughputVC --> Score
+    EndorseVC --> Score
+    Score --> Gov
+
+    style PeerId fill:#3B82F6,color:#fff
+    style DID fill:#3B82F6,color:#fff
+    style Score fill:#10B981,color:#fff
+    style Gov fill:#8B5CF6,color:#fff
+```
+
+### Layer 1 — Identity (already live)
+
+Each node generates a persistent Ed25519 keypair on first start and stores it at `~/.kwaainet/identity.key` in protobuf format. This keypair is passed to go-libp2p-daemon via the `-id` flag, ensuring the same `PeerId` — and thus the same `did:peer:` DID — is used across every restart.
+
+```
+PeerId  =  identity_multihash( protobuf{ key_type=Ed25519, data=<32-byte pubkey> } )
+DID     =  "did:peer:" + base58(PeerId)
+```
+
+The `kwaai-trust` crate provides `peer_id_to_did()` / `did_to_peer_id()` and `extract_ed25519_bytes()` for DID⟷PeerId conversion and key material extraction used in signature verification.
+
+### Layer 2 — Verifiable Credentials
+
+W3C VC Data Model 1.1 credentials, signed with `Ed25519Signature2020`. Stored as JSON files in `~/.kwaainet/credentials/` and included in DHT `ServerInfo` announcements.
+
+| Credential | Issuer | Subject | Trust weight | Phase |
+|---|---|---|---|---|
+| `SummitAttendeeVC` | Kwaai summit server | Node PeerId | 0.10 | **1 — live** |
+| `FiduciaryPledgeVC` | GliaNet Foundation | Node operator | 0.30 | 2 — Q2 2026 |
+| `VerifiedNodeVC` | Kwaai Foundation | Node PeerId | 0.20 | 2 — Q2 2026 |
+| `UptimeVC` | Bootstrap servers | Node PeerId | 0.20 | 3 — Q3 2026 |
+| `ThroughputVC` | Peer nodes | Node PeerId | 0.15 | 3 — Q3 2026 |
+| `PeerEndorsementVC` | Any node | Any node | 0.05 | 4 — Q3 2026 |
+
+**Wire format** — VCs are included in the Hivemind DHT `ServerInfo` fields map as compact JSON strings. Legacy Python Hivemind clients ignore unknown fields; map.kwaai.ai v2 reads them to display trust badges.
+
+```rust
+// DHTServerInfo fields map (MessagePack ExtType 64)
+{
+    "state": 2,
+    "throughput": 33.2,
+    "public_name": "MyNode@kwaai",
+    // ... existing fields ...
+    // New — only present when the node has credentials:
+    "trust_attestations": [
+        "{\"@context\":[...],\"type\":[\"VerifiableCredential\",\"SummitAttendeeVC\"],...}"
+    ]
+}
+```
+
+**VC JSON structure** (W3C compliant):
+```json
+{
+  "@context": [
+    "https://www.w3.org/2018/credentials/v1",
+    "https://kwaai.ai/credentials/v1"
+  ],
+  "type": ["VerifiableCredential", "SummitAttendeeVC"],
+  "issuer": "did:peer:<summit-server-peer-id>",
+  "issuanceDate": "2026-03-15T09:00:00Z",
+  "expirationDate": "2028-03-15T09:00:00Z",
+  "credentialSubject": {
+    "id": "did:peer:<node-peer-id>",
+    "eventName": "Kwaai Personal AI Summit 2026",
+    "eventDate": "2026-03-15"
+  },
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "created": "2026-03-15T09:00:00Z",
+    "verificationMethod": "did:peer:<summit-server-peer-id>#key-1",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "<base64url-encoded-64-byte-signature>"
+  }
+}
+```
+
+### Layer 3 — Trust Scoring
+
+**Phase 2 baseline** (live): weighted credential sum with exponential time-decay.
+
+```
+CredentialScore = Σ  weight(VC_type)  ×  0.5^(age_days / 365)
+NodeTrustScore  = min(CredentialScore, 1.0)
+```
+
+| Score | Tier | Example credential set |
+|---|---|---|
+| ≥ 0.70 | **Trusted** | FiduciaryPledge + VerifiedNode + Uptime |
+| ≥ 0.40 | **Verified** | VerifiedNode present |
+| ≥ 0.10 | **Known** | SummitAttendee |
+| < 0.10 | **Unknown** | No recognised credentials |
+
+**Phase 4 planned**: Full EigenTrust propagation over the endorsement graph.
+
+```
+trust(A→C) = Σ  trust(A→B) × trust(B→C)   (over all intermediaries B, 2-hop max)
+```
+
+EigenTrust handles Sybil resistance: endorsements from low-trust nodes contribute proportionally less weight.
+
+Scores are **local to the querying node** — there is no central leaderboard. A node's earned VCs are portable across infrastructure changes.
+
+### Layer 4 — Governance
+
+| Rule | Current policy |
+|---|---|
+| Trusted VC issuers | Summit server (SummitAttendee), GliaNet Foundation (FiduciaryPledge), Kwaai Foundation (VerifiedNode), bootstrap servers (Uptime/Throughput) |
+| Revocation | `FiduciaryPledgeVC` revocable by GliaNet Foundation if pledge violated |
+| Enterprise routing | Minimum trust score threshold for HIPAA/GDPR workloads (Q2 2026) |
+| Issuer registry | Kwaai Foundation initially; community-governed Q4 2026 |
+
+### `kwaai-trust` crate structure
+
+```
+core/crates/kwaai-trust/src/
+├── lib.rs            — public API surface, re-exports
+├── credential.rs     — VerifiableCredential, KwaaiCredentialType, CredentialProof
+├── did.rs            — peer_id_to_did(), did_to_peer_id(), extract_ed25519_bytes()
+├── storage.rs        — CredentialStore (~/.kwaainet/credentials/)
+├── verify.rs         — Ed25519Signature2020 verification + sign_credential_bytes()
+└── trust_score.rs    — TrustScore::from_credentials(), time_decay(), tier_label()
+```
+
+### Implementation phases
+
+| Phase | What ships | Target |
+|---|---|---|
+| **0** | PeerId as identity anchor | ✅ Done |
+| **1** | `SummitAttendeeVC` + `kwaai-trust` crate + `kwaainet identity` CLI | ✅ Done |
+| **2** | `FiduciaryPledgeVC` issued by GliaNet; `VerifiedNodeVC`; trust badges on map | Q2 2026 |
+| **3** | `UptimeVC` auto-issued by bootstrap servers; `ThroughputVC` from peers | Q3 2026 |
+| **4** | `PeerEndorsementVC` + EigenTrust graph propagation | Q3 2026 |
+| **5** | Optional user DID binding (`did:vda`, `did:web`, ENS) | Q4 2026 |
+
+---
+
 ## Optional Integration Examples
 
 ### Storage Systems
@@ -459,8 +663,12 @@ Multiple distributed storage networks can be integrated:
 - **Custom**: Implement your own storage backend
 
 ### Identity Systems
-Multiple identity systems can be integrated:
-- **W3C DIDs**: Decentralized Identifiers (Verida, ION, etc.)
+
+**Native (built-in, no plugin needed)**:
+- **`did:peer:`** — Every node's libp2p PeerId is exposed as a `did:peer:` DID via `kwaai-trust`. Self-certifying, no registry required. This is the Layer 1 identity anchor for the trust graph.
+
+**Optional external bindings** (via `IdentityProvider` plugin, Phase 5):
+- **W3C DIDs**: Bind a higher-level user DID (`did:vda`, `did:ion`, etc.) to the node's PeerId via a signed assertion
 - **Solid WebID**: Identity integrated with Solid data pods
 - **WebAuthn/PassKeys**: FIDO2 authentication with device biometrics
 - **ENS**: Ethereum Name Service integration
@@ -573,6 +781,7 @@ Comprehensive plan for replicating Hivemind's distributed deep learning in Rust/
 - **[INTEGRATIONS.md](INTEGRATIONS.md)** - Optional integration framework and examples
 - **[docs/CANDLE_ENGINE.md](docs/CANDLE_ENGINE.md)** - Candle framework technical details (includes distributed inference patterns)
 - **[docs/VERIDA_INTEGRATION.md](docs/VERIDA_INTEGRATION.md)** - Optional Verida integration example
+- **`core/crates/kwaai-trust/`** - Decentralized trust graph implementation (credential types, DID utilities, storage, verification, trust scoring)
 
 ---
 
