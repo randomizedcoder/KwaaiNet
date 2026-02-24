@@ -6,6 +6,52 @@
 
 > Building the world's first decentralized AI platform where users own their compute, storage, and data
 
+## Contents
+
+- [Download](#download)
+- [Status](#-status-network-live--operational)
+- [Quick Start](#kwaainet--native-rust-cli)
+- [Vision](#vision)
+- [GliaNet Fiduciary Pledge](#guiding-principles-glianet-fiduciary-pledge)
+- [Decentralized Trust Graph](#decentralized-trust-graph-dtg)
+- [Architecture](#architecture)
+- [Development Roadmap](#development-roadmap)
+- [Documentation](#-documentation)
+
+---
+
+## Download
+
+Pre-built binaries are attached to every [GitHub Release](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest) — no Rust or Go toolchain required.
+
+| Platform | Download |
+|----------|----------|
+| macOS — Apple Silicon (M1/M2/M3/M4) | `kwaainet-vX.Y.Z-aarch64-apple-darwin.tar.gz` |
+| macOS — Intel | `kwaainet-vX.Y.Z-x86_64-apple-darwin.tar.gz` |
+| Linux — x86_64 | `kwaainet-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz` |
+| Windows — x86_64 | `kwaainet-vX.Y.Z-x86_64-pc-windows-msvc.zip` |
+
+**macOS / Linux — one-liner install:**
+```bash
+# Apple Silicon example — replace the filename for your platform
+curl -L https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-aarch64-apple-darwin.tar.gz \
+  | tar -xz && sudo mv kwaainet /usr/local/bin/
+kwaainet setup
+```
+
+**Windows (PowerShell):**
+```powershell
+Invoke-WebRequest -Uri https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-x86_64-pc-windows-msvc.zip -OutFile kwaainet.zip
+Expand-Archive kwaainet.zip -DestinationPath .
+# Move kwaainet.exe to a directory on your PATH
+```
+
+After installing, jump to [Quick Start](#kwaainet--native-rust-cli).
+
+> Want to build from source instead? See [Building from Source](#quick-setup-all-platforms).
+
+---
+
 ## ✅ Status: Network Live & Operational
 
 **Latest Achievements:**
