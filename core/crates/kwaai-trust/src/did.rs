@@ -17,6 +17,10 @@
 
 use libp2p::PeerId;
 
+/// Multicodec varint prefix for P-256 (secp256r1) public keys: 0x1200
+/// Encoded as a two-byte varint: 0x80 0x24
+const P256_MULTICODEC: &[u8] = &[0x80, 0x24];
+
 /// Convert a libp2p `PeerId` to a `did:peer:` DID string
 ///
 /// # Example
@@ -80,6 +84,54 @@ pub fn extract_ed25519_bytes(peer_id: &PeerId) -> Option<[u8; 32]> {
         }
     }
     None
+}
+
+/// Derive a `did:key:` DID from a P-256 public key in DER/SPKI format.
+///
+/// The browser's `credential.response.getPublicKey()` returns the public key
+/// in SubjectPublicKeyInfo (SPKI / DER) format. This function:
+///
+/// 1. Extracts the 65-byte uncompressed P-256 point (prefix `0x04` + x + y)
+///    from the end of the SPKI envelope
+/// 2. Compresses it to 33 bytes (prefix `0x02`/`0x03` + x)
+/// 3. Prepends the P-256 multicodec varint (`0x80 0x24`)
+/// 4. Base58btc-encodes the result with a leading `z` (multibase prefix)
+///
+/// # Errors
+/// Returns an error if the bytes are too short or the uncompressed-point
+/// prefix (`0x04`) is missing.
+pub fn p256_spki_to_did(spki_bytes: &[u8]) -> Result<String, anyhow::Error> {
+    // The last 65 bytes of a P-256 SPKI are the uncompressed public key:
+    //   0x04 || x (32 bytes) || y (32 bytes)
+    if spki_bytes.len() < 65 {
+        return Err(anyhow::anyhow!(
+            "SPKI too short: expected ≥65 bytes, got {}",
+            spki_bytes.len()
+        ));
+    }
+    let uncompressed = &spki_bytes[spki_bytes.len() - 65..];
+    if uncompressed[0] != 0x04 {
+        return Err(anyhow::anyhow!(
+            "Expected uncompressed point prefix 0x04, got 0x{:02x}",
+            uncompressed[0]
+        ));
+    }
+    let x = &uncompressed[1..33];
+    let y_lsb = uncompressed[64];
+
+    // Compress: 0x02 if y is even, 0x03 if y is odd
+    let prefix = if y_lsb & 1 == 0 { 0x02u8 } else { 0x03u8 };
+    let mut compressed = Vec::with_capacity(33);
+    compressed.push(prefix);
+    compressed.extend_from_slice(x);
+
+    // Prepend multicodec varint for P-256
+    let mut multikey = Vec::with_capacity(2 + 33);
+    multikey.extend_from_slice(P256_MULTICODEC);
+    multikey.extend_from_slice(&compressed);
+
+    // Base58btc encode and prepend multibase 'z' prefix
+    Ok(format!("did:key:z{}", bs58::encode(&multikey).into_string()))
 }
 
 #[cfg(test)]

@@ -34,6 +34,8 @@ pub enum KwaaiCredentialType {
     ThroughputVC,
     /// Peer-to-peer endorsement of reliability (Phase 4, EigenTrust source)
     PeerEndorsementVC,
+    /// Binding between a passkey `did:key:` identity and a node `did:peer:` (Phase 1+)
+    BindingVC,
 }
 
 impl KwaaiCredentialType {
@@ -45,6 +47,7 @@ impl KwaaiCredentialType {
             Self::UptimeVC => "UptimeVC",
             Self::ThroughputVC => "ThroughputVC",
             Self::PeerEndorsementVC => "PeerEndorsementVC",
+            Self::BindingVC => "BindingVC",
         }
     }
 
@@ -60,6 +63,8 @@ impl KwaaiCredentialType {
             Self::ThroughputVC => 0.15,
             Self::SummitAttendeeVC => 0.10,
             Self::PeerEndorsementVC => 0.05,
+            // BindingVC is a structural link, not a trust weight contributor
+            Self::BindingVC => 0.0,
         }
     }
 
@@ -72,6 +77,7 @@ impl KwaaiCredentialType {
             "UptimeVC" => Some(Self::UptimeVC),
             "ThroughputVC" => Some(Self::ThroughputVC),
             "PeerEndorsementVC" => Some(Self::PeerEndorsementVC),
+            "BindingVC" => Some(Self::BindingVC),
             _ => None,
         }
     }
@@ -289,4 +295,32 @@ pub fn peer_endorsement_vc(
     // Peer endorsements expire after 90 days (require fresh interactions)
     vc.expiration_date = Some(Utc::now() + chrono::Duration::days(90));
     vc
+}
+
+/// Build a `BindingVC` — issued by the summit server to link a passkey `did:key:`
+/// to a KwaaiNet node `did:peer:` so the node inherits the attendee's trust score.
+pub fn binding_vc(
+    issuer_did: impl Into<String>,
+    node_did: impl Into<String>,
+    passkey_did: impl Into<String>,
+) -> VerifiableCredential {
+    let passkey_did_str = passkey_did.into();
+    let subject = CredentialSubject::new(node_did)
+        .with_claim(
+            "linkedIdentity",
+            serde_json::Value::String(passkey_did_str),
+        )
+        .with_claim(
+            "linkType",
+            serde_json::Value::String("PasskeyBinding".to_string()),
+        );
+
+    VerifiableCredential::new(
+        issuer_did,
+        subject,
+        vec![
+            "VerifiableCredential".to_string(),
+            "BindingVC".to_string(),
+        ],
+    )
 }

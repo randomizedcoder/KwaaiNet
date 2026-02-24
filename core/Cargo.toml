@@ -10,6 +10,7 @@ members = [
     "crates/kwaai-p2p-daemon",
     "crates/kwaai-cli",
     "crates/kwaai-trust",
+    "crates/summit-server",
 ]
 
 # Root package for examples
@@ -172,8 +173,11 @@ web-sys = "0.3"
 
 # Trust graph — verifiable credentials and DID utilities
 base64 = "0.22"
+bs58 = "0.5"
 ed25519-dalek = { version = "2", features = ["serde"] }
 dirs = "5"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
 
 # Testing
 criterion = "0.5"

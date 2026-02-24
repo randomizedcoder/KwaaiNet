@@ -32,9 +32,9 @@ pub mod verify;
 // Convenient re-exports
 pub use credential::{
     CredentialProof, CredentialSubject, KwaaiCredentialType, VerifiableCredential,
-    fiduciary_pledge_vc, peer_endorsement_vc, summit_attendee_vc,
+    binding_vc, fiduciary_pledge_vc, peer_endorsement_vc, summit_attendee_vc,
 };
-pub use did::{did_to_peer_id, peer_id_to_did, verification_method};
+pub use did::{did_to_peer_id, p256_spki_to_did, peer_id_to_did, verification_method};
 pub use storage::CredentialStore;
 pub use trust_score::TrustScore;
 pub use verify::{VerificationResult, sign_credential_bytes, verify};

@@ -26,6 +26,7 @@ libp2p = { workspace = true }
 
 # Cryptography — Ed25519 VC proof verification/signing
 base64 = { workspace = true }
+bs58 = { workspace = true }
 ed25519-dalek = { workspace = true }
 
 # Home directory resolution for default credential store path
