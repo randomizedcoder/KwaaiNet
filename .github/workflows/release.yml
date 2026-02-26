@@ -13,6 +13,8 @@ jobs:
     name: Build — ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.experimental == true }}
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -23,6 +25,7 @@ jobs:
           - os: macos-13        # Intel Mac
             target: x86_64-apple-darwin
             archive: tar.gz
+            experimental: true  # macos-13 runner availability varies by org
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             archive: tar.gz
@@ -43,6 +46,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
+          cache: false   # no go.sum in this repo; avoids a noisy cache-miss warning
 
       - name: Install OpenSSL (Linux — needed by webauthn-rs)
         if: runner.os == 'Linux'
@@ -61,9 +65,35 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.target }}-cargo-
 
+      - name: Ensure core/target/release exists
+        # build.rs writes p2pd to this fixed path regardless of --target.
+        # Cargo does not create target/release/ when --target is specified,
+        # so go build in build.rs would fail on a cold run without this.
+        shell: bash
+        run: mkdir -p core/target/release
+
       - name: Build kwaainet
         working-directory: core
         run: cargo build --release -p kwaai-cli --target ${{ matrix.target }}
+
+      - name: Build p2pd (Unix)
+        # Explicit build AFTER cargo so this overwrites whatever build.rs
+        # produced, guaranteeing p2pd is present and is the correct arch.
+        if: matrix.archive == 'tar.gz'
+        run: |
+          git clone --depth 1 --branch v0.5.0.hivemind1 \
+            https://github.com/learning-at-home/go-libp2p-daemon.git /tmp/go-libp2p-daemon
+          cd /tmp/go-libp2p-daemon
+          go build -o "$GITHUB_WORKSPACE/core/target/release/p2pd" ./p2pd
+
+      - name: Build p2pd (Windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          git clone --depth 1 --branch v0.5.0.hivemind1 `
+            https://github.com/learning-at-home/go-libp2p-daemon.git $env:TEMP\go-libp2p-daemon
+          cd $env:TEMP\go-libp2p-daemon
+          go build -o "${{ github.workspace }}\core\target\release\p2pd.exe" ./p2pd
 
       - name: Package (tar.gz — macOS / Linux)
         if: matrix.archive == 'tar.gz'
