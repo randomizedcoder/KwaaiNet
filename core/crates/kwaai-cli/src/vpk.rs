@@ -201,11 +201,15 @@ async fn discover() -> Result<()> {
     };
 
     // Build the FIND request for the VPK nodes registry key.
+    // Python Hivemind validates that every node_id is a 20-byte DHTID (SHA1-range).
+    // Raw PeerId bytes are 38+ bytes and fail that check, so we SHA1 them first —
+    // same as DHTID.generate(peer_id.to_bytes()) in Python.
     let key = vpk_dht_id("_kwaai.vpk.nodes");
+    let our_dhtid = Sha1::new().chain_update(peer_id.to_bytes()).finalize().to_vec();
     let find_req = FindRequest {
         auth: Some(RequestAuthInfo::new()),
         keys: vec![key],
-        peer: Some(NodeInfo::from_peer_id(peer_id)),
+        peer: Some(NodeInfo { node_id: our_dhtid }),
     };
     let mut req_bytes = Vec::new();
     find_req.encode(&mut req_bytes)?;
@@ -338,42 +342,48 @@ fn parse_vpk_regular(bytes: &[u8]) -> Option<VpkNodeEntry> {
 
 /// Decode a FoundDictionary value into one VpkNodeEntry per subkey.
 ///
-/// Python Hivemind encodes dict results as:
-///   msgpack({ subkey_bytes: [value_bytes, expiration_f64], … })
-///
-/// Our subkey is rmp_serde::to_vec(&peer_id_base58) — a msgpack string.
+/// Python Hivemind serialises DictionaryDHTValue as:
+///   Ext(80, msgpack([global_expiry_f64, created_f64, [[subkey_str, value_bytes, entry_expiry_f64], …]]))
 fn parse_vpk_dictionary(bytes: &[u8], out: &mut Vec<VpkNodeEntry>) {
-    let val = match rmpv::decode::read_value(&mut &bytes[..]) {
+    // Outer layer: Ext(80, inner_bytes)
+    let outer = match rmpv::decode::read_value(&mut &bytes[..]) {
         Ok(v) => v,
         Err(_) => return,
     };
-    let map = match val.as_map() {
-        Some(m) => m,
+    let inner_bytes = match &outer {
+        rmpv::Value::Ext(80, b) => b.as_slice(),
+        _ => return,
+    };
+
+    // Inner layer: [global_expiry, created_time, [[subkey, value, expiry], …]]
+    let inner = match rmpv::decode::read_value(&mut &inner_bytes[..]) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    let outer_arr = match inner.as_array() {
+        Some(a) if a.len() >= 3 => a,
+        _ => return,
+    };
+    let entries = match outer_arr[2].as_array() {
+        Some(e) => e,
         None => return,
     };
 
-    for (subkey_val, dict_entry) in map {
-        // The subkey is stored as binary (raw msgpack bytes of the peer_id string).
-        let peer_id = match subkey_val {
-            rmpv::Value::Binary(sk_bytes) => {
-                // Decode the inner msgpack string.
-                rmp_serde::from_slice::<String>(sk_bytes)
-                    .unwrap_or_else(|_| hex::encode(sk_bytes))
-            }
-            rmpv::Value::String(s) => {
-                s.as_str().unwrap_or("?").to_string()
-            }
+    for entry in entries {
+        let arr = match entry.as_array() {
+            Some(a) if a.len() >= 2 => a,
             _ => continue,
         };
 
-        // dict_entry is [value_bytes, expiration_time] from Python DHTValue.
-        let value_bytes = match dict_entry.as_array() {
-            Some(arr) if !arr.is_empty() => {
-                match &arr[0] {
-                    rmpv::Value::Binary(b) => b.as_slice(),
-                    _ => continue,
-                }
-            }
+        // subkey is a plain string — the peer_id base58
+        let peer_id = match &arr[0] {
+            rmpv::Value::String(s) => s.as_str().unwrap_or("?").to_string(),
+            _ => continue,
+        };
+
+        // value is binary msgpack bytes of the VPK capability map
+        let value_bytes = match &arr[1] {
+            rmpv::Value::Binary(b) => b.as_slice(),
             _ => continue,
         };
 
