@@ -178,6 +178,12 @@ The following areas need contributors. Pick what interests you and open a PR or 
 - [ ] Smoke-test `summit-server` Docker image end-to-end (passkey registration → VC issuance → node bind)
 - [ ] Add Docker build to CI so image is validated on every PR, not only on release tags
 
+### Cross-Compilation
+- [ ] Cross-compile `x86_64-apple-darwin` (Intel Mac) from `macos-latest` (Apple Silicon) runner — requires `GOARCH=amd64` for p2pd and verifying no C dependency issues with the macOS SDK
+- [ ] Cross-compile `x86_64-unknown-linux-gnu` from macOS or Windows using `cross` or `zig cc` as the linker
+- [ ] Cross-compile `x86_64-pc-windows-msvc` from Linux using `cross` + MinGW or MSVC sysroot
+- [ ] Once cross-compilation is proven, collapse the 4-platform matrix to a single `ubuntu-latest` runner to cut CI time and eliminate runner availability issues (e.g. `macos-13` deprecation)
+
 ### Release & Distribution
 - [ ] Smoke-test Windows binary end-to-end (currently marked `experimental` in release.yml)
 - [ ] Write `install.sh` auto-detect script (detects platform, downloads correct binary, installs both kwaainet + p2pd)
