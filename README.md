@@ -35,15 +35,15 @@ Pre-built binaries for **v0.1.1** are attached to the [latest GitHub Release](ht
 ```bash
 # Apple Silicon
 curl -L https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-aarch64-apple-darwin.tar.gz \
-  | tar -xz && sudo mv kwaainet p2pd /usr/local/bin/
+  | tar -xz -C /tmp && sudo mv /tmp/kwaainet /tmp/p2pd /usr/local/bin/
 
 # Intel Mac
 curl -L https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-x86_64-apple-darwin.tar.gz \
-  | tar -xz && sudo mv kwaainet p2pd /usr/local/bin/
+  | tar -xz -C /tmp && sudo mv /tmp/kwaainet /tmp/p2pd /usr/local/bin/
 
 # Linux x86_64
 curl -L https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-x86_64-unknown-linux-gnu.tar.gz \
-  | tar -xz && sudo mv kwaainet p2pd /usr/local/bin/
+  | tar -xz -C /tmp && sudo mv /tmp/kwaainet /tmp/p2pd /usr/local/bin/
 
 kwaainet setup
 ```
