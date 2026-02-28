@@ -64,9 +64,9 @@ After installing, run:
 kwaainet setup && kwaainet benchmark && kwaainet start --daemon
 ```
 
-**Windows (PowerShell — no admin required):**
-```powershell
-irm https://raw.githubusercontent.com/Kwaai-AI-Lab/KwaaiNet/main/install.ps1 | iex
+**Windows (no admin required) — works from cmd.exe or PowerShell:**
+```
+powershell -Command "irm https://raw.githubusercontent.com/Kwaai-AI-Lab/KwaaiNet/main/install.ps1 | iex"
 ```
 
 After installing, jump to [Quick Start](#kwaainet--native-rust-cli).
