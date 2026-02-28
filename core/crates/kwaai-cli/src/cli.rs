@@ -79,6 +79,9 @@ pub enum Command {
     /// Manage VPK (Virtual Private Knowledge) vector database integration
     Vpk(VpkArgs),
 
+    /// Uninstall KwaaiNet — stop the node, remove all data, and delete binaries
+    Uninstall(UninstallArgs),
+
     /// Internal: run the node in the foreground (used by daemon mode)
     #[command(hide = true)]
     RunNode,
@@ -375,6 +378,21 @@ pub enum VpkAction {
         #[arg(long, value_name = "NAME")]
         kb_id: String,
     },
+}
+
+// ---------------------------------------------------------------------------
+// uninstall
+// ---------------------------------------------------------------------------
+
+#[derive(Args)]
+pub struct UninstallArgs {
+    /// Skip the confirmation prompt
+    #[arg(long, short = 'y')]
+    pub yes: bool,
+
+    /// Keep ~/.kwaainet/ data (config, logs, identity) — only remove binaries and service
+    #[arg(long)]
+    pub keep_data: bool,
 }
 
 // ---------------------------------------------------------------------------

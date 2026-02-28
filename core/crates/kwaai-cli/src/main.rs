@@ -15,6 +15,7 @@ mod hf;
 mod ollama;
 mod service;
 mod throughput;
+mod uninstall;
 mod updater;
 mod vpk;
 
@@ -821,6 +822,13 @@ async fn main() -> Result<()> {
         // -------------------------------------------------------------------
         Command::Vpk(args) => {
             vpk::run(args).await?;
+        }
+
+        // -------------------------------------------------------------------
+        // uninstall
+        // -------------------------------------------------------------------
+        Command::Uninstall(args) => {
+            uninstall::run_uninstall(&args)?;
         }
 
         // -------------------------------------------------------------------
