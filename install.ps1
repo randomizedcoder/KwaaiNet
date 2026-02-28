@@ -4,8 +4,14 @@
 $ErrorActionPreference = "Stop"
 
 $repo    = "Kwaai-AI-Lab/KwaaiNet"
-$asset   = "kwaainet-x86_64-pc-windows-msvc.zip"
-$url     = "https://github.com/$repo/releases/latest/download/$asset"
+
+# Resolve the latest release version via the GitHub API so we use a versioned
+# URL instead of the /releases/latest alias, which can serve stale CDN-cached
+# assets for several minutes after a new release is published.
+$version = (Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest").tag_name
+Write-Host "Version  : $version" -ForegroundColor Cyan
+$asset   = "kwaainet-$version-x86_64-pc-windows-msvc.zip"
+$url     = "https://github.com/$repo/releases/download/$version/$asset"
 $zip     = "$env:TEMP\kwaainet-install.zip"
 $dst     = "$env:LOCALAPPDATA\kwaainet"
 

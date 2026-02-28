@@ -16,7 +16,19 @@
 set -euo pipefail
 
 REPO="Kwaai-AI-Lab/KwaaiNet"
-BASE_URL="https://github.com/${REPO}/releases/latest/download"
+
+# Resolve the latest release version tag via the GitHub API so we use a
+# versioned URL (e.g. /releases/download/v0.1.4/kwaainet-v0.1.4-…) instead
+# of the /releases/latest/download alias, which can serve stale CDN-cached
+# assets for several minutes after a new release is published.
+VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
+  | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+if [ -z "${VERSION}" ]; then
+  echo "Error: could not determine latest release version from GitHub API."
+  exit 1
+fi
+echo "Version  : ${VERSION}"
+BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
 
 # ── platform detection ────────────────────────────────────────────────────────
 
@@ -35,7 +47,7 @@ case "${OS}-${ARCH}" in
     ;;
 esac
 
-ARCHIVE="kwaainet-${TARGET}.tar.gz"
+ARCHIVE="kwaainet-${VERSION}-${TARGET}.tar.gz"
 URL="${BASE_URL}/${ARCHIVE}"
 
 echo "=== KwaaiNet Installer ==="
