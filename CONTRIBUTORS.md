@@ -23,32 +23,38 @@ The following areas need contributors. Pick what interests you and open a PR or 
 
 ### Inference Engine (Candle) — **critical path**
 
-> **Context**: The current `kwaai-inference` crate is a stub. `engine.rs` returns
-> hardcoded strings; model loading stores empty weight vectors; the tokenizer is
-> byte-level only. The node never calls the inference crate at all — it is purely
-> a DHT announcer. The Python/Petals equivalent achieves ~1500 tokens/s on a Mac
-> mini; the Rust node produces ~100 tokens/s of fake output. All items below are
-> needed to close that gap.
+> **Context** (updated 2026-02-27): Local single-node inference is now real —
+> GGUF/SafeTensors model loading via `candle-transformers`, BPE tokenizer from
+> GGUF vocab or `tokenizer.json`, autoregressive `generate()` loop, and Metal GPU
+> acceleration on Apple Silicon all work. The node serves the full model locally
+> and exposes an OpenAI-compatible API.
+>
+> What is **not yet implemented** is true Petals-style distributed block sharding.
+> Each node currently runs the full model independently. The `start_block`/`end_block`
+> fields in DHT announcements are metadata only — no activation tensors are exchanged
+> between nodes. The `forward()` method in `engine.rs` returns an error stub and the
+> `kwaai-distributed` MoE routing returns input unchanged. The items below are needed
+> to close that gap.
 
 **Model loading**
-- [ ] Implement real weight loading from SafeTensors (`candle-core`) in `engine.rs`
-- [ ] Implement GGUF model loading for quantized models (`candle-transformers`)
-- [ ] Replace `_weights: Vec::new()` with an actual loaded model struct
+- [x] Implement real weight loading from SafeTensors (`candle-core`) in `engine.rs`
+- [x] Implement GGUF model loading for quantized models (`candle-transformers`)
+- [x] Replace `_weights: Vec::new()` with an actual loaded model struct
 
 **Tokenizer**
-- [ ] Replace the byte-level placeholder tokenizer with a real BPE tokenizer
-      (e.g. `tokenizers` crate, or load vocab from HuggingFace model repo)
+- [x] Replace the byte-level placeholder tokenizer with a real BPE tokenizer
+      (`tokenizers` crate; loaded from GGUF vocab or `tokenizer.json`)
 
 **Forward pass & generation**
-- [ ] Implement a real autoregressive token generation loop in `engine.rs`
+- [x] Implement a real autoregressive token generation loop in `engine.rs`
 - [ ] Add KV-cache support for efficient multi-turn generation
 - [ ] Implement temperature / top-p / top-k sampling
 - [ ] Wire `kwaai-inference` into the node's RPC handlers so inference requests
       actually reach the engine (currently the RPC path never calls the crate)
 
 **Apple Silicon / Metal acceleration**
-- [ ] Enable the existing `metal` feature flag (`candle-core/metal`) by default on macOS
-- [ ] Verify `candle_core::Device::Metal` is selected at runtime on Apple Silicon
+- [x] Enable the `metal` feature flag (`candle-core/metal`) on macOS — 33+ tok/s on M4 Pro
+- [x] Verify `candle_core::Device::Metal` is selected at runtime on Apple Silicon
 - [ ] Benchmark Metal vs CPU on Mac mini and document results
 
 **Benchmarking**
@@ -58,8 +64,40 @@ The following areas need contributors. Pick what interests you and open a PR or 
 
 **Longer-term**
 - [ ] Benchmark Candle vs. llama.cpp bindings vs. ONNX Runtime and document results
-- [ ] Streaming token output over the RPC interface
+- [ ] Streaming token output over the RPC interface (currently returns full completion)
 - [ ] Multi-model routing (select model by capability or load)
+
+### Distributed Block Sharding (Petals model) — **next major milestone**
+
+> **Context**: The Petals/Hivemind model shards a single transformer across multiple
+> nodes. Node A loads blocks 0–7, processes the input embeddings, and forwards the
+> resulting activation tensor to Node B which processes blocks 8–15, and so on until
+> the final node produces logits. This enables running models too large for any single
+> machine. The KwaaiNet Rust implementation has all the networking infrastructure in
+> place (DHT block announcements, RPC handlers, p2p daemon) but does not yet perform
+> any inter-node activation routing. All items below are needed to make real sharding
+> work.
+
+- [ ] **Partial model loading** — load only transformer blocks `start_block..end_block`
+      instead of the full model; slice the weight tensors at load time in `loader.rs`
+- [ ] **Inference RPC message type** — define a protobuf/msgpack `InferenceRequest`
+      carrying `(session_id, sequence_position, activation_tensor)` for node-to-node
+      forwarding; add request/response types alongside the existing Hivemind RPC messages
+      in `kwaai-p2p-daemon`
+- [ ] **Wire `forward()` in `engine.rs`** — receive an activation tensor via RPC, run it
+      through the local block slice, return the output tensor; replace the current error stub
+- [ ] **Activation handoff** — after processing local blocks, send the output tensor to the
+      next node in the block chain; discover the next node from the DHT block registry
+- [ ] **Client-side coordinator** — logic to find which nodes hold which blocks for a given
+      model (via DHT lookup), chain the RPC calls in order, and reassemble the final logits
+      for sampling; lives in `kwaai-distributed/src/coordinator.rs`
+- [ ] **Session management** — track in-flight inference sessions (sequence length, KV cache
+      state) across the multi-node chain; handle node dropout / re-routing mid-sequence
+- [ ] **Real MoE expert routing** — replace the uniform stub in `kwaai-distributed/src/moe.rs`
+      with real softmax + top-k gating and remote expert calls via P2P for MoE models
+      (e.g. Mixtral)
+- [ ] **End-to-end test** — two-node integration test on localhost: node A serves blocks 0–3,
+      node B serves blocks 4–7, client sends a prompt and receives correct output
 
 ### Windows Support — **needs a Windows dev machine**
 
