@@ -476,8 +476,8 @@ pub async fn run_node(config: &KwaaiNetConfig) -> Result<()> {
         &prefix,
         &repository,
         config.model_total_blocks(),
-        0,
-        config.blocks as i32,
+        config.start_block as i32,
+        (config.start_block + config.blocks) as i32,
         &server_info,
     )
     .await
@@ -487,7 +487,7 @@ pub async fn run_node(config: &KwaaiNetConfig) -> Result<()> {
     info!("   Peer ID : {}", peer_id.to_base58());
     info!("   Name    : {}", public_name);
     info!("   Model   : {}", config.model);
-    info!("   Blocks  : 0–{}", config.blocks);
+    info!("   Blocks  : {}–{}", config.start_block, config.start_block + config.blocks);
     info!("   Map     : https://map.kwaai.ai");
 
     // -----------------------------------------------------------------------
@@ -521,7 +521,7 @@ pub async fn run_node(config: &KwaaiNetConfig) -> Result<()> {
                 if let Err(e) = announce(
                     &mut client, peer_id, &storage, &bootstrap_peers,
                     &prefix, &repository, config.model_total_blocks(),
-                    0, config.blocks as i32, &server_info,
+                    config.start_block as i32, (config.start_block + config.blocks) as i32, &server_info,
                 ).await {
                     warn!("Re-announce failed: {}", e);
                 }
