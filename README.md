@@ -22,7 +22,7 @@
 
 ## Download
 
-Pre-built binaries for **v0.1.1** are attached to the [latest GitHub Release](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest) — no Rust or Go toolchain required. Each archive contains both `kwaainet` and `p2pd`.
+Pre-built binaries for **v0.1.3** are attached to the [latest GitHub Release](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest) — no Rust or Go toolchain required. Each archive contains both `kwaainet` and `p2pd`.
 
 | Platform | Download |
 |----------|----------|
