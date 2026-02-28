@@ -332,6 +332,7 @@ pub async fn cmd_shard_run(args: ShardRunArgs) -> Result<()> {
         let logits_bytes = forward_through_chain(
             &mut client,
             &chain,
+            total_blocks,
             session_id,
             seq_pos as u32,
             request,
@@ -758,9 +759,16 @@ fn decode_server_info_ext(bytes: &[u8]) -> Option<(usize, usize, String, String)
 
 /// Send an `InferenceRequest` to the first peer in the chain, routing the
 /// activation tensor through each subsequent peer until the last returns logits.
+/// Forward a request through the block chain, advancing greedily by block position.
+///
+/// At each position, all candidates covering that position are tried in order of
+/// widest coverage (largest end_block first). This allows nodes running older code
+/// without an inference handler to be transparently skipped in favour of the next
+/// available peer that covers the same range.
 async fn forward_through_chain(
     client: &mut P2PClient,
     chain: &[BlockServerEntry],
+    total_blocks: usize,
     session_id: u64,
     seq_pos: u32,
     first_request: InferenceRequest,
@@ -769,30 +777,51 @@ async fn forward_through_chain(
 
     let mut request = first_request;
     let mut response: Option<InferenceResponse> = None;
+    let mut pos = 0;
 
-    for (idx, entry) in chain.iter().enumerate() {
-        let resp = call_block_forward(client, &entry.peer_id, &request)
-            .await
-            .with_context(|| {
-                format!(
-                    "RPC call to peer {} (blocks {}-{}) failed",
-                    entry.peer_id.to_base58().chars().take(12).collect::<String>(),
-                    entry.start_block,
-                    entry.end_block,
-                )
-            })?;
+    while pos < total_blocks {
+        // All nodes whose range covers `pos`, widest first
+        let mut candidates: Vec<&BlockServerEntry> = chain
+            .iter()
+            .filter(|e| e.start_block <= pos && e.end_block > pos)
+            .collect();
+        candidates.sort_by(|a, b| b.end_block.cmp(&a.end_block));
 
-        // If not the last node, build the next request with hidden states
-        if idx + 1 < chain.len() {
-            request = InferenceRequest {
-                session_id,
-                seq_pos,
-                payload_type: PayloadType::HiddenStates,
-                shape: resp.shape.clone(),
-                data: resp.data.clone(),
-            };
+        if candidates.is_empty() {
+            anyhow::bail!("No server covers block {} — chain has a gap", pos);
         }
-        response = Some(resp);
+
+        let mut succeeded = false;
+        for candidate in &candidates {
+            match call_block_forward(client, &candidate.peer_id, &request).await {
+                Ok(resp) => {
+                    pos = candidate.end_block;
+                    if pos < total_blocks {
+                        request = InferenceRequest {
+                            session_id,
+                            seq_pos,
+                            payload_type: PayloadType::HiddenStates,
+                            shape: resp.shape.clone(),
+                            data: resp.data.clone(),
+                        };
+                    }
+                    response = Some(resp);
+                    succeeded = true;
+                    break;
+                }
+                Err(_) => {
+                    print_warning(&format!(
+                        "Peer {} ({}) unreachable, trying next candidate…",
+                        candidate.peer_id.to_base58().chars().take(12).collect::<String>(),
+                        candidate.public_name,
+                    ));
+                }
+            }
+        }
+
+        if !succeeded {
+            anyhow::bail!("All {} candidate(s) for block {} failed", candidates.len(), pos);
+        }
     }
 
     response.ok_or_else(|| anyhow::anyhow!("Empty chain — no peers to forward through"))
