@@ -1,21 +1,24 @@
 #!/usr/bin/env bash
 # cargo-dist extra-artifact hook: build p2pd (go-libp2p-daemon fork).
 #
-# cargo-dist calls this script and expects the built binary to be placed at
-# $CARGO_DIST_EXTRA_ARTIFACTS_DIR/p2pd  (Unix) or p2pd.exe (Windows).
+# cargo-dist runs this script from the workspace root (core/) and looks for
+# the listed artifacts in that same directory when the script exits.
+# Concretely: artifacts = ["p2pd"] means cargo-dist expects core/p2pd.
+#
+# If cargo-dist sets CARGO_DIST_EXTRA_ARTIFACTS_DIR, that takes priority.
 #
 # Environment variables set by cargo-dist:
-#   CARGO_DIST_EXTRA_ARTIFACTS_DIR  — output directory for this artifact
+#   CARGO_DIST_EXTRA_ARTIFACTS_DIR  — output directory for this artifact (may be unset)
 #   CARGO_BUILD_TARGET              — Rust target triple (e.g. aarch64-apple-darwin)
-#
-# GOARCH mapping: We derive Go's GOARCH/GOOS from CARGO_BUILD_TARGET so that
-# cross-compiled targets (e.g. building x86_64-apple-darwin on an ARM runner)
-# produce the correct p2pd binary.
 
 set -euo pipefail
 
 TARGET="${CARGO_BUILD_TARGET:-}"
-OUT_DIR="${CARGO_DIST_EXTRA_ARTIFACTS_DIR:-.}"
+
+# Resolve output directory to an absolute path NOW, before any directory
+# changes.  cargo-dist may not set CARGO_DIST_EXTRA_ARTIFACTS_DIR; if unset
+# it expects artifacts relative to its working directory (core/), i.e. CWD.
+OUT_DIR="$(cd "${CARGO_DIST_EXTRA_ARTIFACTS_DIR:-.}" && pwd)"
 
 # ── Derive GOOS / GOARCH from Rust target triple ─────────────────────────────
 case "${TARGET}" in
@@ -40,11 +43,12 @@ fi
 
 echo "==> Building p2pd for ${GOOS}/${GOARCH} ..."
 
-CLONE_DIR="/tmp/go-libp2p-daemon-$$"
+CLONE_DIR="$(mktemp -d -t go-libp2p-daemon-XXXX)"
 git clone --depth 1 --branch v0.5.0.hivemind1 \
     https://github.com/learning-at-home/go-libp2p-daemon.git "${CLONE_DIR}"
 
-cd "${CLONE_DIR}"
-go build -o "${OUT_DIR}/${BINARY_NAME}" ./p2pd
+# Use -C (Go 1.21+) to build without cd-ing away from OUT_DIR.
+# This ensures the output lands in OUT_DIR regardless of working directory.
+go build -C "${CLONE_DIR}" -o "${OUT_DIR}/${BINARY_NAME}" ./p2pd
 
 echo "==> p2pd built at ${OUT_DIR}/${BINARY_NAME}"
