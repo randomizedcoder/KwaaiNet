@@ -28,27 +28,31 @@ if ($env:Path -notlike "*$dst*") {
     $env:Path += ";$dst"
 }
 
-# Persist to user PATH
+# Persist to user PATH — prepend so it wins over stale copies (e.g. ~/.cargo/bin)
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$dst*") {
-    [Environment]::SetEnvironmentVariable("Path", "$userPath;$dst", "User")
-    Write-Host "Added $dst to your PATH (restart terminal to take effect in new windows)" -ForegroundColor Yellow
+    [Environment]::SetEnvironmentVariable("Path", "$dst;$userPath", "User")
+    Write-Host "Added $dst to your PATH" -ForegroundColor Yellow
 }
 
-# Remove stale copies from other locations (e.g. cargo install) that would shadow the new binary
+# Prepend for this session too
+$env:Path = "$dst;$env:Path"
+
+# Try to remove stale copies — best-effort, non-fatal
 $stalePaths = @(
     "$env:USERPROFILE\.cargo\bin\kwaainet.exe",
     "$env:USERPROFILE\.cargo\bin\p2pd.exe"
 )
 foreach ($stale in $stalePaths) {
     if (Test-Path $stale) {
-        Remove-Item $stale -Force
-        Write-Host "Removed stale binary: $stale" -ForegroundColor Yellow
+        try {
+            Remove-Item $stale -Force -ErrorAction Stop
+            Write-Host "Removed stale binary: $stale" -ForegroundColor Yellow
+        } catch {
+            Write-Host "Note: could not remove $stale (will be shadowed by PATH order)" -ForegroundColor Yellow
+        }
     }
 }
-
-# Prepend install dir so it wins over any remaining PATH entries
-$env:Path = "$dst;$env:Path"
 
 Write-Host "Running kwaainet setup..." -ForegroundColor Cyan
 & "$dst\kwaainet.exe" setup
