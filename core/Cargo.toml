@@ -203,6 +203,9 @@ extra-artifacts = [
     { build = ["../scripts/build-p2pd.sh"], artifacts = ["p2pd"] },
 ]
 
+[profile.dist]
+inherits = "release"
+
 [profile.release]
 lto = true
 opt-level = 3
