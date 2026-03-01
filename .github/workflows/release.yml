@@ -137,6 +137,34 @@ jobs:
           fi
       - name: Install dist
         run: ${{ matrix.install_dist.run }}
+      # Go is required by the kwaai-p2p-daemon build.rs which clones and
+      # compiles go-libp2p-daemon.  The old handwritten workflow had an
+      # explicit setup-go step; cargo-dist doesn't know about it.
+      - name: Install Go (required by kwaai-p2p-daemon build script)
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: false
+      # build.rs writes p2pd to target/release/ (hardcoded) regardless of
+      # --target.  Cargo only creates target/<triple>/release/ when --target
+      # is given, so target/release/ must be created manually.
+      - name: Create target/release for kwaai-p2p-daemon build script
+        shell: bash
+        run: mkdir -p core/target/release
+      # OpenSSL headers are needed by openssl-sys (transitive via reqwest/libp2p).
+      - name: Install OpenSSL (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y libssl-dev pkg-config
+      # On Windows, point openssl-sys at the pre-installed OpenSSL.
+      - name: Set OpenSSL paths (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dir = Get-ChildItem "C:\Program Files" -Filter "OpenSSL*" -ErrorAction SilentlyContinue |
+                 Select-Object -First 1 -ExpandProperty FullName
+          if ($dir) {
+            echo "OPENSSL_DIR=$dir" >> $env:GITHUB_ENV
+          }
       # Get the dist-manifest
       - name: Fetch local artifacts
         uses: actions/download-artifact@v7
