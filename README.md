@@ -22,24 +22,45 @@
 
 ## Download
 
-Pre-built binaries for **v0.1.5** are attached to the [latest GitHub Release](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest) — no Rust or Go toolchain required.
+Pre-built binaries for **v0.1.6** are attached to the [latest GitHub Release](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest) — no Rust or Go toolchain required.
 
-### Homebrew (macOS / Linux — recommended)
+### cargo binstall (primary — all platforms)
+
+If you have `cargo` installed, this is the fastest path — installs to `~/.cargo/bin/` and works identically on macOS, Linux, and Windows:
 
 ```bash
-brew install kwaai-ai-lab/tap/kwaainet
+cargo binstall kwaainet
 ```
 
-### Shell installer (macOS / Linux)
+Don't have `cargo-binstall` yet? Install it first:
+
+```bash
+cargo install cargo-binstall
+```
+
+Or bootstrap without Rust:
+
+```bash
+# macOS / Linux
+curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+```
+
+### Shell installer (macOS / Linux — no Rust required)
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-installer.sh | sh
 ```
 
-### PowerShell installer (Windows)
+### PowerShell installer (Windows — no Rust required)
 
 ```powershell
 powershell -ExecutionPolicy Bypass -c "irm https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-installer.ps1 | iex"
+```
+
+### Homebrew (macOS / Linux — optional)
+
+```bash
+brew install kwaai-ai-lab/tap/kwaainet
 ```
 
 ### Direct download
@@ -66,9 +87,9 @@ After installing, jump to [Quick Start](#kwaainet--native-rust-cli).
 ## ✅ Status: Network Live & Operational
 
 **Latest Achievements:**
+- ✅ **v0.1.6 Released** — `cargo binstall kwaainet` as primary install path; fixed binstall archive naming and format; `kwaainet uninstall` now removes from all known install locations (`~/.cargo/bin/`, `~/.local/bin/`); launchd unload noise suppressed when service was never started
 - ✅ **v0.1.5 Released** — cargo-dist release automation; Homebrew tap (`brew install kwaai-ai-lab/tap/kwaainet`); SHA256-verified installers for all 5 platforms; `kwaainet update` self-update support
 - ✅ **v0.1.4 Released** — `kwaainet uninstall` command; verified Windows one-line install (`irm | iex`); clean removal of daemon, service, data, and binaries on all platforms
-- ✅ **Windows One-Line Install Verified** — `irm https://raw.githubusercontent.com/Kwaai-AI-Lab/KwaaiNet/main/install.ps1 | iex` downloads, installs, adds to PATH, and runs `kwaainet setup` — no admin rights required, tested end-to-end
 - ✅ **`kwaainet uninstall`** — new command cleanly removes all KwaaiNet artefacts: stops the daemon, uninstalls the auto-start service, removes `~/.kwaainet/`, and deletes the `kwaainet` and `p2pd` binaries; `--keep-data` flag preserves config/identity; works on macOS, Linux, and Windows (rename-first strategy handles running-binary constraint)
 - ✅ **v0.1.3 Released** — Linux aarch64 (ARM64) added as a first-class release target; smart default node name (`{user}-{os}-{arch}`); release workflow race condition fixed so all platform binaries upload reliably in parallel
 - ✅ **Linux ARM64 Support** — native `aarch64-unknown-linux-gnu` binary built on `ubuntu-24.04-arm` runner; works on Oracle Ampere, AWS Graviton, Raspberry Pi 5, and any ARM64 Linux host

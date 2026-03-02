@@ -132,19 +132,23 @@ fn remove_binaries() {
         }
     }
 
-    // The cargo-dist installer places kwaainet in ~/.cargo/bin/, which is a
-    // separate location from the binary that's currently running.  Remove it
-    // if it exists and is not the same file we already removed above.
+    // Also remove from other known install locations that differ from the
+    // currently-running binary:
+    //   ~/.cargo/bin/  — cargo-dist installer default
+    //   ~/.local/bin/  — original pre-v0.1.5 install.sh
     if let Some(home) = std::env::var_os("HOME") {
-        let cargo_bin = std::path::PathBuf::from(home)
-            .join(".cargo")
-            .join("bin")
-            .join(kwaainet_name);
-        if cargo_bin.exists() && cargo_bin != exe {
-            #[cfg(not(windows))]
-            remove_binary_file(&cargo_bin);
-            #[cfg(windows)]
-            remove_binary_windows(&cargo_bin);
+        let home = std::path::PathBuf::from(home);
+        let extra_locations = [
+            home.join(".cargo").join("bin").join(kwaainet_name),
+            home.join(".local").join("bin").join(kwaainet_name),
+        ];
+        for alt_bin in &extra_locations {
+            if alt_bin.exists() && alt_bin != &exe {
+                #[cfg(not(windows))]
+                remove_binary_file(alt_bin);
+                #[cfg(windows)]
+                remove_binary_windows(alt_bin);
+            }
         }
     }
 }

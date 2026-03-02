@@ -12,8 +12,13 @@ keywords = ["ai", "p2p", "decentralized", "inference", "kwaainet"]
 categories = ["command-line-utilities", "network-programming"]
 
 [package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/{ version }/kwaainet-{ version }-{ target }.tar.gz"
+pkg-url = "{ repo }/releases/download/v{ version }/kwaainet-{ target }.tar.xz"
+pkg-fmt = "txz"
 bin-dir = "{ bin }{ binary-ext }"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/kwaainet-{ target }.zip"
+pkg-fmt = "zip"
 
 [[bin]]
 name = "kwaainet"
