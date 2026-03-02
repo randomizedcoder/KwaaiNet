@@ -317,15 +317,22 @@ jobs:
           echo "dist ran successfully"
 
           # Patch installers to also install p2pd alongside kwaainet.
+          # dist outputs installers to target/distrib/ (the artifact staging dir).
           # The shell installer iterates space-separated $_bins; add p2pd for all Unix targets.
           # The PS1 installer uses a PowerShell array; add p2pd.exe for Windows.
-          if [ -f "kwaainet-installer.sh" ]; then
-            sed -i 's/_bins="kwaainet"/_bins="kwaainet p2pd"/g' kwaainet-installer.sh
+          if [ -f "target/distrib/kwaainet-installer.sh" ]; then
+            sed -i 's/_bins="kwaainet"/_bins="kwaainet p2pd"/g' target/distrib/kwaainet-installer.sh
             echo "Patched kwaainet-installer.sh: p2pd added to _bins"
+          else
+            echo "WARNING: kwaainet-installer.sh not found at target/distrib/"
+            find . -name "kwaainet-installer.sh" 2>/dev/null
           fi
-          if [ -f "kwaainet-installer.ps1" ]; then
-            sed -i 's/"bins" = @("kwaainet.exe")/"bins" = @("kwaainet.exe", "p2pd.exe")/g' kwaainet-installer.ps1
+          if [ -f "target/distrib/kwaainet-installer.ps1" ]; then
+            sed -i 's/"bins" = @("kwaainet.exe")/"bins" = @("kwaainet.exe", "p2pd.exe")/g' target/distrib/kwaainet-installer.ps1
             echo "Patched kwaainet-installer.ps1: p2pd.exe added to bins array"
+          else
+            echo "WARNING: kwaainet-installer.ps1 not found at target/distrib/"
+            find . -name "kwaainet-installer.ps1" 2>/dev/null
           fi
 
           # Parse out what we just built and upload it to scratch storage
