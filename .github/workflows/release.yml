@@ -181,6 +181,54 @@ jobs:
           # Actually do builds and make zips and whatnot
           dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
           echo "dist ran successfully"
+      # cargo-dist publishes extra-artifacts (p2pd) as separate top-level release
+      # assets, not bundled in the per-platform .tar.xz/.zip archives.  Inject
+      # p2pd into each archive so the installer places both binaries side-by-side
+      # in ~/.cargo/bin/ and kwaainet can find p2pd at runtime.
+      - name: Inject p2pd into platform archive (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        working-directory: core
+        run: |
+          [ -f "p2pd" ] || { echo "p2pd not found — skipping injection"; exit 0; }
+          for TARGET in ${{ join(matrix.targets, ' ') }}; do
+            ARCHIVE=$(find . -name "kwaainet-${TARGET}.tar.xz" 2>/dev/null | head -1)
+            [ -n "${ARCHIVE}" ] || { echo "Archive for ${TARGET} not found — skipping"; continue; }
+            echo "Injecting p2pd into ${ARCHIVE}..."
+            LABEL="kwaainet-${TARGET}"
+            TMP=$(mktemp -d)
+            tar -xJf "${ARCHIVE}" -C "${TMP}"
+            cp p2pd "${TMP}/${LABEL}/"
+            tar -cJf "${ARCHIVE}" -C "${TMP}" "${LABEL}"
+            rm -rf "${TMP}"
+            HASH=$(openssl dgst -sha256 -hex "${ARCHIVE}" | awk '{print $NF}')
+            echo "${HASH} *$(basename ${ARCHIVE})" > "${ARCHIVE}.sha256"
+            echo "Done: $(ls -lh ${ARCHIVE})"
+          done
+
+      - name: Inject p2pd into platform archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: core
+        run: |
+          if (-not (Test-Path "p2pd.exe")) {
+            Write-Host "p2pd.exe not found — skipping injection"; exit 0
+          }
+          foreach ($TARGET in "${{ join(matrix.targets, ' ') }}".Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)) {
+            $archive = Get-ChildItem -Recurse -Filter "kwaainet-${TARGET}.zip" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $archive) { Write-Host "Archive for ${TARGET} not found — skipping"; continue }
+            Write-Host "Injecting p2pd.exe into $($archive.FullName)..."
+            $tmp = New-Item -ItemType Directory -Path (Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName()))
+            Expand-Archive -Path $archive.FullName -DestinationPath $tmp.FullName -Force
+            Copy-Item "p2pd.exe" (Join-Path $tmp.FullName "kwaainet-${TARGET}")
+            Remove-Item $archive.FullName -Force
+            Compress-Archive -Path (Join-Path $tmp.FullName "*") -DestinationPath $archive.FullName
+            $hash = (Get-FileHash $archive.FullName -Algorithm SHA256).Hash.ToLower()
+            Set-Content "$($archive.FullName).sha256" "$hash *kwaainet-${TARGET}.zip"
+            Remove-Item $tmp.FullName -Recurse -Force
+            Write-Host "Done."
+          }
+
       - id: cargo-dist
         name: Post-build
         # We force bash here just because github makes it really hard to get values up
