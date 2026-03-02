@@ -292,6 +292,9 @@ pub async fn run_node(config: &KwaaiNetConfig) -> Result<()> {
     // -----------------------------------------------------------------------
     info!("[1/5] Starting p2p daemon...");
     let p2pd_path = find_p2pd_binary();
+    if p2pd_path.is_none() {
+        eprintln!("  ⚠️  p2pd not found — run `kwaainet setup --get-deps` to install it");
+    }
 
     // p2pd listens for P2P traffic on the configured port
     let host_addr = format!("/ip4/0.0.0.0/tcp/{}", config.port);
