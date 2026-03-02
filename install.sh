@@ -14,8 +14,32 @@ set -euo pipefail
 
 REPO="Kwaai-AI-Lab/KwaaiNet"
 
-# Resolve the latest release tag so we fetch the versioned installer URL
-# (avoids stale CDN caches on /releases/latest).
+# ── Clean up old manual installs (pre-v0.1.5) ────────────────────────────────
+# Before v0.1.5, the install instructions used `tar | sudo mv` which placed
+# binaries in /usr/local/bin.  Remove them so they don't shadow the new
+# cargo-dist install in ~/.cargo/bin.
+for old_bin in /usr/local/bin/kwaainet /usr/local/bin/p2pd; do
+  if [ -f "${old_bin}" ]; then
+    echo "Removing old install: ${old_bin}"
+    if sudo rm -f "${old_bin}" 2>/dev/null; then
+      echo "  removed ${old_bin}"
+    else
+      echo "  Warning: could not remove ${old_bin} — run: sudo rm -f ${old_bin}"
+    fi
+  fi
+done
+
+# Warn if a Homebrew-managed copy exists — it will shadow ~/.cargo/bin.
+if command -v brew >/dev/null 2>&1 && brew list kwaainet >/dev/null 2>&1; then
+  echo ""
+  echo "Note: kwaainet is also installed via Homebrew."
+  echo "  To avoid PATH conflicts, run: brew uninstall kwaainet"
+  echo "  Or upgrade instead:          brew upgrade kwaainet"
+  echo ""
+fi
+
+# ── Resolve the latest release tag ───────────────────────────────────────────
+# (avoids stale CDN caches on /releases/latest)
 VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
   | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
 if [ -z "${VERSION}" ]; then

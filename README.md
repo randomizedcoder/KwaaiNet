@@ -24,16 +24,6 @@
 
 Pre-built binaries for **v0.1.5** are attached to the [latest GitHub Release](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest) — no Rust or Go toolchain required.
 
-### Clean up a previous install first
-
-If you have an older version installed, remove it before installing:
-
-```bash
-./scripts/clean.sh --all
-```
-
-See [scripts/clean.sh](./scripts/clean.sh) for details and flags (`--dry-run`, interactive mode).
-
 ### Homebrew (macOS / Linux — recommended)
 
 ```bash

@@ -9,10 +9,25 @@
 
 $ErrorActionPreference = "Stop"
 
-$repo    = "Kwaai-AI-Lab/KwaaiNet"
+$repo = "Kwaai-AI-Lab/KwaaiNet"
 
-# Resolve the latest release tag so we fetch the versioned installer URL
-# (avoids stale CDN caches on /releases/latest).
+# ── Clean up old manual installs (pre-v0.1.5) ────────────────────────────────
+# Before v0.1.5, the Windows installer placed binaries in
+# $env:LOCALAPPDATA\Programs\kwaainet.  Remove them so they don't shadow the
+# new cargo-dist install in ~/.cargo/bin.
+$oldDir = Join-Path $env:LOCALAPPDATA "Programs\kwaainet"
+if (Test-Path $oldDir) {
+    Write-Host "Removing old install: $oldDir" -ForegroundColor Yellow
+    try {
+        Remove-Item -Recurse -Force $oldDir
+        Write-Host "  removed $oldDir"
+    } catch {
+        Write-Host "  Warning: could not remove $oldDir — delete it manually." -ForegroundColor Yellow
+    }
+}
+
+# ── Resolve the latest release tag ───────────────────────────────────────────
+# (avoids stale CDN caches on /releases/latest)
 $version = (Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest").tag_name
 Write-Host "Installing KwaaiNet $version ..." -ForegroundColor Cyan
 
