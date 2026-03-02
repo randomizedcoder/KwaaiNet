@@ -22,51 +22,39 @@
 
 ## Download
 
-Pre-built binaries for **v0.1.4** are attached to the [latest GitHub Release](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest) — no Rust or Go toolchain required. Each archive contains both `kwaainet` and `p2pd`.
+Pre-built binaries for **v0.1.5** are attached to the [latest GitHub Release](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest) — no Rust or Go toolchain required.
+
+### Homebrew (macOS / Linux — recommended)
+
+```bash
+brew install kwaai-ai-lab/tap/kwaainet
+```
+
+### Shell installer (macOS / Linux)
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-installer.sh | sh
+```
+
+### PowerShell installer (Windows)
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-installer.ps1 | iex"
+```
+
+### Direct download
 
 | Platform | Download |
 |----------|----------|
-| macOS — Apple Silicon (M1/M2/M3/M4) | [kwaainet-aarch64-apple-darwin.tar.gz](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-aarch64-apple-darwin.tar.gz) |
-| macOS — Intel | [kwaainet-x86_64-apple-darwin.tar.gz](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-x86_64-apple-darwin.tar.gz) |
-| Linux — x86_64 | [kwaainet-x86_64-unknown-linux-gnu.tar.gz](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-x86_64-unknown-linux-gnu.tar.gz) |
-| Linux — aarch64 (ARM64) | [kwaainet-aarch64-unknown-linux-gnu.tar.gz](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-aarch64-unknown-linux-gnu.tar.gz) |
+| macOS — Apple Silicon (M1/M2/M3/M4) | [kwaainet-aarch64-apple-darwin.tar.xz](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-aarch64-apple-darwin.tar.xz) |
+| macOS — Intel | [kwaainet-x86_64-apple-darwin.tar.xz](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-x86_64-apple-darwin.tar.xz) |
+| Linux — x86_64 | [kwaainet-x86_64-unknown-linux-gnu.tar.xz](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-x86_64-unknown-linux-gnu.tar.xz) |
+| Linux — aarch64 (ARM64) | [kwaainet-aarch64-unknown-linux-gnu.tar.xz](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-aarch64-unknown-linux-gnu.tar.xz) |
 | Windows — x86_64 | [kwaainet-x86_64-pc-windows-msvc.zip](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-x86_64-pc-windows-msvc.zip) |
-
-**macOS / Linux — one command does everything** (auto-detects platform, installs, sets up identity, calibrates, starts node):
-```bash
-curl -fsSL https://raw.githubusercontent.com/Kwaai-AI-Lab/KwaaiNet/main/install.sh | bash
-```
-
-Or install the binary only and run each step manually:
-
-**Apple Silicon:**
-```bash
-curl -L --progress-bar https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-aarch64-apple-darwin.tar.gz | tar -xz -C /tmp && sudo mv /tmp/kwaainet /tmp/p2pd /usr/local/bin/
-```
-
-**Intel Mac:**
-```bash
-curl -L --progress-bar https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-x86_64-apple-darwin.tar.gz | tar -xz -C /tmp && sudo mv /tmp/kwaainet /tmp/p2pd /usr/local/bin/
-```
-
-**Linux x86_64:**
-```bash
-curl -L --progress-bar https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C /tmp && sudo mv /tmp/kwaainet /tmp/p2pd /usr/local/bin/
-```
-
-**Linux aarch64** (ARM64 — e.g. Oracle Ampere, AWS Graviton, Raspberry Pi 5):
-```bash
-curl -L --progress-bar https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-aarch64-unknown-linux-gnu.tar.gz | tar -xz -C /tmp && sudo mv /tmp/kwaainet /tmp/p2pd /usr/local/bin/
-```
 
 After installing, run:
 ```bash
 kwaainet setup && kwaainet benchmark && kwaainet start --daemon
-```
-
-**Windows (no admin required) — works from cmd.exe or PowerShell:**
-```
-powershell -Command "irm https://raw.githubusercontent.com/Kwaai-AI-Lab/KwaaiNet/main/install.ps1 | iex"
 ```
 
 After installing, jump to [Quick Start](#kwaainet--native-rust-cli).
@@ -78,6 +66,7 @@ After installing, jump to [Quick Start](#kwaainet--native-rust-cli).
 ## ✅ Status: Network Live & Operational
 
 **Latest Achievements:**
+- ✅ **v0.1.5 Released** — cargo-dist release automation; Homebrew tap (`brew install kwaai-ai-lab/tap/kwaainet`); SHA256-verified installers for all 5 platforms; `kwaainet update` self-update support
 - ✅ **v0.1.4 Released** — `kwaainet uninstall` command; verified Windows one-line install (`irm | iex`); clean removal of daemon, service, data, and binaries on all platforms
 - ✅ **Windows One-Line Install Verified** — `irm https://raw.githubusercontent.com/Kwaai-AI-Lab/KwaaiNet/main/install.ps1 | iex` downloads, installs, adds to PATH, and runs `kwaainet setup` — no admin rights required, tested end-to-end
 - ✅ **`kwaainet uninstall`** — new command cleanly removes all KwaaiNet artefacts: stops the daemon, uninstalls the auto-start service, removes `~/.kwaainet/`, and deletes the `kwaainet` and `p2pd` binaries; `--keep-data` flag preserves config/identity; works on macOS, Linux, and Windows (rename-first strategy handles running-binary constraint)
@@ -423,7 +412,7 @@ The `kwaainet` binary is a fully native Rust CLI for managing your KwaaiNet node
 
 **Build:**
 ```bash
-cargo build --release -p kwaai-cli
+cargo build --release -p kwaainet
 # Binary at: target/release/kwaainet
 ```
 
