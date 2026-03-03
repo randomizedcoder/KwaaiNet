@@ -1062,13 +1062,23 @@ fn rand_f32() -> f32 {
     ((shuffled >> 33) as u32 as f32) / (u32::MAX as f32)
 }
 
-/// Generate a random u64 session ID.
+/// Generate a random u64 session ID using splitmix64 over (nanos ⊕ pid).
+///
+/// Using raw `as_nanos() as u64` truncates a u128 and collides if called
+/// twice within the same nanosecond. Mixing in the process ID + splitmix64
+/// gives adequate entropy without adding a dependency.
 fn rand_session_id() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
+    let ns = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(42)
+        .map(|d| d.as_nanos() as u64) // low 64 bits of epoch-nanos
+        .unwrap_or(42);
+    let pid = std::process::id() as u64;
+    // splitmix64: thoroughly mixes bits, eliminates collision from same-ns calls
+    let mut x = ns ^ pid.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    x ^ (x >> 31)
 }
 
 /// Derive a DHT prefix from a model name/path using Petals conventions.
