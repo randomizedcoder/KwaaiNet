@@ -76,7 +76,7 @@ else
     echo "✅ Rust found: $(cargo --version)"
 
     # Check Rust version - need 1.80+ for edition2024 support
-    RUST_VERSION=$(cargo --version | grep -oP '\d+\.\d+' | head -1)
+    RUST_VERSION=$(cargo --version | grep -oE '[0-9]+\.[0-9]+' | head -1)
     MAJOR=$(echo $RUST_VERSION | cut -d. -f1)
     MINOR=$(echo $RUST_VERSION | cut -d. -f2)
 
@@ -91,65 +91,69 @@ else
 fi
 
 # 5. Go toolchain
+GO_ACTION=""
 if ! command -v go &> /dev/null; then
-    echo "📦 Installing Go 1.21..."
-
-    if [ "$OS" = "linux" ]; then
-        wget https://go.dev/dl/go1.21.13.linux-amd64.tar.gz
-        sudo rm -rf /usr/local/go
-        sudo tar -C /usr/local -xzf go1.21.13.linux-amd64.tar.gz
-        rm go1.21.13.linux-amd64.tar.gz
-
-        export PATH=$PATH:/usr/local/go/bin
-        echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-    else
-        # macOS
-        if [ "$(uname -m)" = "arm64" ]; then
-            wget https://go.dev/dl/go1.21.13.darwin-arm64.tar.gz
-            sudo tar -C /usr/local -xzf go1.21.13.darwin-arm64.tar.gz
-            rm go1.21.13.darwin-arm64.tar.gz
-        else
-            wget https://go.dev/dl/go1.21.13.darwin-amd64.tar.gz
-            sudo tar -C /usr/local -xzf go1.21.13.darwin-amd64.tar.gz
-            rm go1.21.13.darwin-amd64.tar.gz
-        fi
-
-        export PATH=$PATH:/usr/local/go/bin
-        echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.zshrc
-        echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-    fi
-
-    echo "✅ Go installed: $(go version)"
+    GO_ACTION="install"
 else
     echo "✅ Go found: $(go version)"
 
     # Check Go version - need 1.20+
-    GO_VERSION=$(go version | grep -oP 'go\d+\.\d+' | grep -oP '\d+\.\d+')
+    GO_VERSION=$(go version | grep -oE 'go[0-9]+\.[0-9]+' | grep -oE '[0-9]+\.[0-9]+')
     GO_MAJOR=$(echo $GO_VERSION | cut -d. -f1)
     GO_MINOR=$(echo $GO_VERSION | cut -d. -f2)
 
     if [ "$GO_MAJOR" -lt 1 ] || ([ "$GO_MAJOR" -eq 1 ] && [ "$GO_MINOR" -lt 20 ]); then
         echo "⚠️  Go version $GO_VERSION is too old (need 1.20+)"
-        echo "📦 Installing Go 1.21..."
+        GO_ACTION="upgrade"
+    fi
+fi
 
-        if [ "$OS" = "linux" ]; then
-            wget https://go.dev/dl/go1.21.13.linux-amd64.tar.gz
-            sudo rm -rf /usr/local/go
-            sudo tar -C /usr/local -xzf go1.21.13.linux-amd64.tar.gz
-            rm go1.21.13.linux-amd64.tar.gz
+if [ -n "$GO_ACTION" ]; then
+    GO_VERSION="1.21.13"
+    echo "📦 Installing Go ${GO_VERSION}..."
+
+    case "$OSTYPE" in
+        linux-gnu*)
+            GO_OS="linux"
+            GO_ARCH="amd64"
+            [ "$(uname -m)" = "aarch64" ] && GO_ARCH="arm64"
+            ;;
+        darwin*)
+            GO_OS="darwin"
+            GO_ARCH="amd64"
+            [ "$(uname -m)" = "arm64" ] && GO_ARCH="arm64"
+            ;;
+        *)
+            echo "❌ Unsupported platform for Go installation: $OSTYPE"
+            exit 1
+            ;;
+    esac
+
+    wget "https://go.dev/dl/go${GO_VERSION}.${GO_OS}-${GO_ARCH}.tar.gz"
+    sudo rm -rf /usr/local/go
+    sudo tar -C /usr/local -xzf "go${GO_VERSION}.${GO_OS}-${GO_ARCH}.tar.gz"
+    rm "go${GO_VERSION}.${GO_OS}-${GO_ARCH}.tar.gz"
+
+    export PATH=/usr/local/go/bin:$PATH
+    RC_UPDATED=false
+    if [[ "$SHELL" == */zsh ]]; then
+        grep -qxF 'export PATH=/usr/local/go/bin:$PATH' ~/.zshrc  || { echo 'export PATH=/usr/local/go/bin:$PATH' >> ~/.zshrc;  RC_UPDATED=true; }
+    else
+        grep -qxF 'export PATH=/usr/local/go/bin:$PATH' ~/.bashrc || { echo 'export PATH=/usr/local/go/bin:$PATH' >> ~/.bashrc; RC_UPDATED=true; }
+    fi
+
+    if [ "$GO_ACTION" = "install" ]; then
+        echo "✅ Go installed: $(go version)"
+    else
+        echo "✅ Go upgraded to: $(go version)"
+    fi
+
+    if [ "$RC_UPDATED" = true ]; then
+        if [[ "$SHELL" == */zsh ]]; then
+            echo "⚠️  Run 'source ~/.zshrc' to update your PATH for Go."
         else
-            if [ "$(uname -m)" = "arm64" ]; then
-                wget https://go.dev/dl/go1.21.13.darwin-arm64.tar.gz
-                sudo tar -C /usr/local -xzf go1.21.13.darwin-arm64.tar.gz
-                rm go1.21.13.darwin-arm64.tar.gz
-            else
-                wget https://go.dev/dl/go1.21.13.darwin-amd64.tar.gz
-                sudo tar -C /usr/local -xzf go1.21.13.darwin-amd64.tar.gz
-                rm go1.21.13.darwin-amd64.tar.gz
-            fi
+            echo "⚠️  Run 'source ~/.bashrc' to update your PATH for Go."
         fi
-
-        echo "✅ Go updated to: $(go version)"
     fi
 fi
 
