@@ -158,13 +158,21 @@ pub struct LogsArgs {
 
 #[derive(Args)]
 pub struct ConfigArgs {
-    /// View current configuration
-    #[arg(long)]
-    pub view: bool,
+    #[command(subcommand)]
+    pub action: Option<ConfigAction>,
+}
 
-    /// Set a configuration key to a value
-    #[arg(long, num_args = 2, value_names = ["KEY", "VALUE"])]
-    pub set: Option<Vec<String>>,
+#[derive(Subcommand)]
+pub enum ConfigAction {
+    /// Show current configuration (default when no subcommand given)
+    Show,
+    /// Set a configuration key: kwaainet config set KEY VALUE
+    Set {
+        /// Config key (model, blocks, port, use_gpu, log_level, public_name, …)
+        key: String,
+        /// New value
+        value: String,
+    },
 }
 
 // ---------------------------------------------------------------------------

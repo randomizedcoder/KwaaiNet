@@ -224,7 +224,7 @@ pub fn make_block_rpc_handler(
 }
 
 /// Process one incoming inference request against the local shard.
-async fn handle_inference_request(
+pub async fn handle_inference_request(
     shard: &TransformerShard,
     device: &Device,
     raw: &[u8],

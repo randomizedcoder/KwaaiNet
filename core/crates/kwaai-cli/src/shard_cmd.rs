@@ -128,9 +128,24 @@ pub async fn cmd_shard_serve(args: ShardServeArgs) -> Result<()> {
 
         (s, e)
     } else {
-        // --start-block was explicitly provided; use it as-is
+        // --start-block was explicitly provided; sync config so the DHT announcer matches.
         let s = args.start_block.unwrap() as usize;
-        (s, s + target_blocks)
+        let e = s + target_blocks;
+        let mut updated = cfg.clone();
+        updated.start_block = s as u32;
+        updated.blocks = (e - s) as u32;
+        if updated.start_block != cfg.start_block || updated.blocks != cfg.blocks {
+            updated.save().context("Failed to save config.yaml")?;
+            print_info("Updated config.yaml — restarting node daemon to re-announce…");
+            let mgr = crate::daemon::DaemonManager::new();
+            if mgr.is_running() {
+                mgr.stop_process().ok();
+            }
+            crate::daemon::DaemonManager::spawn_daemon_child(&[]).ok();
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            print_info("Config synced; daemon restarted to re-announce block range.");
+        }
+        (s, e)
     };
 
     // Resolve model directory (CLI override > HF snapshot for config.model)
@@ -213,6 +228,20 @@ pub async fn cmd_shard_serve(args: ShardServeArgs) -> Result<()> {
     print_info("Serving inference requests — press Ctrl-C to stop");
     print_separator();
 
+    // Start local TCP bypass server so `shard run` on the same machine can
+    // call us without triggering libp2p's "dial to self" rejection.
+    let _ = std::fs::create_dir_all(crate::config::run_dir());
+    match start_local_inference_server(shard.clone(), device.clone()).await {
+        Ok(port) => {
+            if let Err(e) = std::fs::write(local_server_port_file(), port.to_string()) {
+                tracing::warn!("Could not write shard_local.port: {e}");
+            } else {
+                print_info(&format!("Local bypass server on 127.0.0.1:{}", port));
+            }
+        }
+        Err(e) => tracing::warn!("Could not start local bypass server: {e}"),
+    }
+
     // Background GC task: evict idle sessions every 30 s
     let shard_gc = shard.clone();
     tokio::spawn(async move {
@@ -225,6 +254,7 @@ pub async fn cmd_shard_serve(args: ShardServeArgs) -> Result<()> {
 
     // Wait for Ctrl-C
     tokio::signal::ctrl_c().await.context("ctrl-c handler")?;
+    let _ = std::fs::remove_file(local_server_port_file());
     println!();
     print_info("Shard server stopped.");
     Ok(())
@@ -412,6 +442,7 @@ pub async fn cmd_shard_run(args: ShardRunArgs) -> Result<()> {
             session_id,
             seq_pos as u32,
             request,
+            Some(&our_peer_id),
         )
         .await?;
 
@@ -869,8 +900,14 @@ pub async fn forward_through_chain(
     session_id: u64,
     seq_pos: u32,
     first_request: InferenceRequest,
+    our_peer_id: Option<&PeerId>,
 ) -> Result<crate::block_rpc::InferenceResponse> {
     use crate::block_rpc::InferenceResponse;
+
+    // Read local bypass port once (written by `shard serve` on this machine).
+    let local_port: Option<u16> = std::fs::read_to_string(local_server_port_file())
+        .ok()
+        .and_then(|s| s.trim().parse().ok());
 
     let mut request = first_request;
     let mut response: Option<InferenceResponse> = None;
@@ -890,7 +927,20 @@ pub async fn forward_through_chain(
 
         let mut succeeded = false;
         for candidate in &candidates {
-            match call_block_forward(client, &candidate.peer_id, &request).await {
+            // Self-bypass: avoid libp2p "dial to self" by using the local TCP server.
+            let is_self = our_peer_id.map_or(false, |id| id == &candidate.peer_id);
+            let result = if is_self {
+                match local_port {
+                    Some(port) => local_inference_call(port, &request).await,
+                    None => Err(anyhow::anyhow!(
+                        "shard serve is not running on this machine (no local port file)"
+                    )),
+                }
+            } else {
+                call_block_forward(client, &candidate.peer_id, &request).await
+            };
+
+            match result {
                 Ok(resp) => {
                     pos = candidate.end_block;
                     if pos < total_blocks {
@@ -931,6 +981,112 @@ pub async fn forward_through_chain(
     }
 
     response.ok_or_else(|| anyhow::anyhow!("Empty chain — no peers to forward through"))
+}
+
+// ── Local inference bypass (avoids libp2p self-dial) ─────────────────────────
+
+/// Path to the file that holds the local TCP bypass port written by `shard serve`.
+fn local_server_port_file() -> std::path::PathBuf {
+    crate::config::run_dir().join("shard_local.port")
+}
+
+/// Spawn a local TCP server on `127.0.0.1:0` that serves the same
+/// msgpack inference protocol as the p2pd handler, without going through p2pd.
+/// Returns the bound port.  Called by `cmd_shard_serve`.
+async fn start_local_inference_server(
+    shard: Arc<TransformerShard>,
+    device: candle_core::Device,
+) -> Result<u16> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .context("bind local inference server")?;
+    let port = listener.local_addr()?.port();
+
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                break;
+            };
+            let shard = shard.clone();
+            let device = device.clone();
+            tokio::spawn(async move {
+                // Framing: 4-byte LE length prefix + msgpack bytes
+                let mut len_buf = [0u8; 4];
+                if stream.read_exact(&mut len_buf).await.is_err() {
+                    return;
+                }
+                let len = u32::from_le_bytes(len_buf) as usize;
+                let mut buf = vec![0u8; len];
+                if stream.read_exact(&mut buf).await.is_err() {
+                    return;
+                }
+
+                let resp_bytes =
+                    match crate::block_rpc::handle_inference_request(&shard, &device, &buf).await {
+                        Ok(r) => rmp_serde::to_vec_named(&r).unwrap_or_default(),
+                        Err(e) => {
+                            let err_resp = crate::block_rpc::InferenceResponse {
+                                session_id: 0,
+                                response_type: crate::block_rpc::ResponseType::HiddenStates,
+                                shape: vec![],
+                                data: vec![],
+                                error: Some(e.to_string()),
+                            };
+                            rmp_serde::to_vec_named(&err_resp).unwrap_or_default()
+                        }
+                    };
+
+                let len_bytes = (resp_bytes.len() as u32).to_le_bytes();
+                let _ = stream.write_all(&len_bytes).await;
+                let _ = stream.write_all(&resp_bytes).await;
+            });
+        }
+    });
+
+    Ok(port)
+}
+
+/// Call the local TCP inference bypass server (used instead of p2pd self-dial).
+async fn local_inference_call(
+    port: u16,
+    request: &InferenceRequest,
+) -> Result<crate::block_rpc::InferenceResponse> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpStream;
+
+    let req_bytes = rmp_serde::to_vec_named(request).context("serialise InferenceRequest")?;
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port))
+        .await
+        .context("connect to local inference server")?;
+
+    let len_bytes = (req_bytes.len() as u32).to_le_bytes();
+    stream.write_all(&len_bytes).await.context("write length")?;
+    stream
+        .write_all(&req_bytes)
+        .await
+        .context("write request")?;
+
+    let mut len_buf = [0u8; 4];
+    stream
+        .read_exact(&mut len_buf)
+        .await
+        .context("read response length")?;
+    let len = u32::from_le_bytes(len_buf) as usize;
+    let mut buf = vec![0u8; len];
+    stream
+        .read_exact(&mut buf)
+        .await
+        .context("read response")?;
+
+    let response: crate::block_rpc::InferenceResponse =
+        rmp_serde::from_slice(&buf).context("deserialise InferenceResponse")?;
+    if let Some(ref err) = response.error {
+        anyhow::bail!("Local inference error: {err}");
+    }
+    Ok(response)
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

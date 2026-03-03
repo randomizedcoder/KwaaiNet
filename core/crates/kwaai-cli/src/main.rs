@@ -320,29 +320,31 @@ async fn main() -> Result<()> {
         // config
         // -------------------------------------------------------------------
         Command::Config(args) => {
+            use cli::ConfigAction;
             let mut cfg = KwaaiNetConfig::load_or_create()?;
 
-            if args.view || (!args.view && args.set.is_none()) {
-                print_box_header("⚙️  KwaaiNet Configuration");
-                println!("  🤖 model:        {}", cfg.model);
-                println!("  🧱 blocks:       {}", cfg.blocks);
-                println!("  🔌 port:         {}", cfg.port);
-                println!("  🖥️  use_gpu:      {}", cfg.use_gpu);
-                println!("  📋 log_level:    {}", cfg.log_level);
-                if let Some(ref n) = cfg.public_name {
-                    println!("  📋 public_name:  {}", n);
+            match args.action {
+                None | Some(ConfigAction::Show) => {
+                    print_box_header("⚙️  KwaaiNet Configuration");
+                    println!("  🤖 model:        {}", cfg.model);
+                    println!("  🧱 blocks:       {}", cfg.blocks);
+                    println!("  🔌 port:         {}", cfg.port);
+                    println!("  🖥️  use_gpu:      {}", cfg.use_gpu);
+                    println!("  📋 log_level:    {}", cfg.log_level);
+                    if let Some(ref n) = cfg.public_name {
+                        println!("  📋 public_name:  {}", n);
+                    }
+                    if let Some(ref ip) = cfg.public_ip {
+                        println!("  📋 public_ip:    {}", ip);
+                    }
+                    print_separator();
                 }
-                if let Some(ref ip) = cfg.public_ip {
-                    println!("  📋 public_ip:    {}", ip);
+                Some(ConfigAction::Set { key, value }) => {
+                    cfg.set_key(&key, &value)?;
+                    print_box_header("⚙️  Configuration Updated");
+                    print_success(&format!("Set {} = {}", key, value));
+                    print_separator();
                 }
-                print_separator();
-            } else if let Some(kv) = args.set {
-                let key = &kv[0];
-                let value = &kv[1];
-                cfg.set_key(key, value)?;
-                print_box_header("⚙️  Configuration Updated");
-                print_success(&format!("Set {} = {}", key, value));
-                print_separator();
             }
         }
 

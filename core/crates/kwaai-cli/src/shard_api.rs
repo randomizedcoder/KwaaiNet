@@ -46,6 +46,7 @@ struct AppState {
     default_temp: f32,
     eos_id: u32,
     bos_id: Option<u32>,
+    our_peer_id: PeerId,
 }
 
 // ── OpenAI request types ──────────────────────────────────────────────────────
@@ -236,6 +237,7 @@ async fn run_inference(
             session_id,
             seq_pos as u32,
             request,
+            Some(&state.our_peer_id),
         )
         .await
         {
@@ -611,6 +613,7 @@ pub async fn run(args: ShardApiArgs) -> Result<()> {
         default_temp: args.temperature,
         eos_id,
         bos_id,
+        our_peer_id,
     });
 
     let app = Router::new()
