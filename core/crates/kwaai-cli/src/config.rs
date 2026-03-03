@@ -344,8 +344,23 @@ impl KwaaiNetConfig {
         Ok(())
     }
 
-    /// Total transformer blocks in the full model (for the _petals.models registry).
+    /// Total transformer blocks in the full model.
+    ///
+    /// Reads `num_hidden_layers` from the model's `config.json` when the
+    /// snapshot is available locally. Falls back to a name-based heuristic
+    /// (32 / 40 / 80) when the model has not been downloaded yet.
     pub fn model_total_blocks(&self) -> i32 {
+        if let Ok(model_dir) = crate::hf::resolve_snapshot(&self.model) {
+            let config_path = model_dir.join("config.json");
+            if let Ok(s) = std::fs::read_to_string(&config_path) {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                    if let Some(n) = v["num_hidden_layers"].as_i64() {
+                        return n as i32;
+                    }
+                }
+            }
+        }
+        // Fallback: name heuristic when model is not yet downloaded.
         let m = self.model.to_lowercase();
         if m.contains("70b") {
             80
