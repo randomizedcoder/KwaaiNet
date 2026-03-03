@@ -556,7 +556,14 @@ async fn main() -> Result<()> {
                     if args.check {
                         print_info("Run 'kwaainet update' (without --check) to install");
                     } else {
-                        print_info("Download the latest release from the URL above to update");
+                        println!("  Installing v{}…", info.version);
+                        println!();
+                        checker.install_update().await?;
+                        println!();
+                        print_success(&format!(
+                            "Updated to v{}! Restart any running daemon with `kwaainet restart`.",
+                            info.version
+                        ));
                     }
                 }
             }

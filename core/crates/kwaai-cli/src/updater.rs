@@ -1,6 +1,6 @@
 //! Self-update checker via GitHub releases API
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tracing::debug;
@@ -112,6 +112,64 @@ impl UpdateChecker {
             update_info: info.clone(),
         };
         std::fs::write(&path, serde_json::to_string(&entry)?)?;
+        Ok(())
+    }
+
+    /// Download and run the cargo-dist installer for this platform.
+    /// On Unix runs the shell installer via `sh`; on Windows runs the PowerShell installer.
+    pub async fn install_update(&self) -> Result<()> {
+        #[cfg(unix)]
+        {
+            let url = "https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-installer.sh";
+            let tmp = std::env::temp_dir().join("kwaainet-installer.sh");
+            self.download_to(url, &tmp).await?;
+
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))?;
+
+            let status = std::process::Command::new("sh")
+                .arg(&tmp)
+                .status()
+                .context("Failed to launch installer")?;
+
+            let _ = std::fs::remove_file(&tmp);
+            if !status.success() {
+                anyhow::bail!("Installer exited with {}", status);
+            }
+        }
+
+        #[cfg(windows)]
+        {
+            let url = "https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-installer.ps1";
+            let tmp = std::env::temp_dir().join("kwaainet-installer.ps1");
+            self.download_to(url, &tmp).await?;
+
+            let status = std::process::Command::new("powershell")
+                .args(["-ExecutionPolicy", "Bypass", "-File"])
+                .arg(&tmp)
+                .status()
+                .context("Failed to launch installer")?;
+
+            let _ = std::fs::remove_file(&tmp);
+            if !status.success() {
+                anyhow::bail!("Installer exited with {}", status);
+            }
+        }
+
+        #[cfg(not(any(unix, windows)))]
+        anyhow::bail!("Self-update is not supported on this platform");
+
+        Ok(())
+    }
+
+    async fn download_to(&self, url: &str, path: &std::path::Path) -> Result<()> {
+        let client = reqwest::Client::builder()
+            .user_agent(format!("kwaainet/{}", CURRENT_VERSION))
+            .timeout(std::time::Duration::from_secs(120))
+            .build()?;
+        let bytes = client.get(url).send().await?.bytes().await?;
+        std::fs::write(path, &bytes)
+            .with_context(|| format!("Failed to write installer to {}", path.display()))?;
         Ok(())
     }
 }
