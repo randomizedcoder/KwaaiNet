@@ -286,15 +286,18 @@ fn kill_orphaned_p2pd() {
     let mut sys = System::new();
     sys.refresh_processes_specifics(ProcessRefreshKind::new());
 
+    let mut found = false;
     for (pid, process) in sys.processes() {
         let name = process.name();
         if name == "p2pd" || name == "p2pd.exe" {
             info!("Killing orphaned p2pd process (PID {})", pid);
+            found = true;
             #[cfg(unix)]
             {
                 use nix::sys::signal::{kill, Signal};
                 use nix::unistd::Pid as NixPid;
-                let _ = kill(NixPid::from_raw(pid.as_u32() as i32), Signal::SIGTERM);
+                // SIGKILL — no grace period, port released immediately.
+                let _ = kill(NixPid::from_raw(pid.as_u32() as i32), Signal::SIGKILL);
             }
             #[cfg(not(unix))]
             {
@@ -303,6 +306,11 @@ fn kill_orphaned_p2pd() {
                     .output();
             }
         }
+    }
+
+    // Give the OS a moment to release the port before the next p2pd starts.
+    if found {
+        std::thread::sleep(Duration::from_millis(500));
     }
 }
 
