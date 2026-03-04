@@ -31,7 +31,7 @@ use tracing_subscriber::EnvFilter;
 
 use cli::{Cli, Command, MonitorAction, ServeArgs, ServiceAction};
 use config::KwaaiNetConfig;
-use daemon::DaemonManager;
+use daemon::{DaemonManager, ShardManager};
 use display::*;
 use kwaai_inference::{EngineConfig, InferenceEngine, InferenceProvider, ModelFormat};
 
@@ -222,6 +222,22 @@ async fn main() -> Result<()> {
                 let child_pid = DaemonManager::spawn_daemon_child(&[])?;
                 println!();
                 print_success(&format!("KwaaiNet daemon started (PID {})", child_pid));
+
+                if args.shard {
+                    // Wait for the node daemon to bind its socket before starting shard serve
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                    match ShardManager::spawn_shard_child() {
+                        Ok(shard_pid) => {
+                            ShardManager::new().write_pid(shard_pid);
+                            print_success(&format!("Shard server started   (PID {})", shard_pid));
+                            print_info("Shard logs:   kwaainet logs --shard");
+                        }
+                        Err(e) => {
+                            print_warning(&format!("Could not start shard server: {e}"));
+                        }
+                    }
+                }
+
                 print_info("Check status: kwaainet status");
                 print_info("View logs:    kwaainet logs");
                 print_info("Stop daemon:  kwaainet stop");
@@ -238,6 +254,12 @@ async fn main() -> Result<()> {
         Command::Stop => {
             let mgr = DaemonManager::new();
             print_box_header("🛑 Stopping KwaaiNet Node");
+            // Stop shard server first (it depends on the p2p daemon)
+            let shard_mgr = ShardManager::new();
+            if shard_mgr.is_running() {
+                shard_mgr.stop_process();
+                print_success("Shard server stopped");
+            }
             mgr.stop_process()?;
             print_success("KwaaiNet daemon stopped");
             print_separator();
@@ -294,6 +316,17 @@ async fn main() -> Result<()> {
                 print_info("Start with: kwaainet start --daemon");
             }
 
+            // Show shard server status
+            let shard_mgr = ShardManager::new();
+            println!();
+            if shard_mgr.is_running() {
+                let shard_pid = shard_mgr.read_pid().unwrap_or(0);
+                println!("  🟢 Shard:   Running (PID {})", shard_pid);
+            } else {
+                println!("  ⚫ Shard:   Not running");
+                print_info("Start shard: kwaainet start --daemon --shard");
+            }
+
             print_separator();
         }
 
@@ -301,7 +334,11 @@ async fn main() -> Result<()> {
         // logs
         // -------------------------------------------------------------------
         Command::Logs(args) => {
-            let log_path = config::log_file();
+            let log_path = if args.shard {
+                config::log_dir().join("shard.log")
+            } else {
+                config::log_file()
+            };
 
             if !log_path.exists() {
                 print_warning("No log file found. Start the node first: kwaainet start --daemon");

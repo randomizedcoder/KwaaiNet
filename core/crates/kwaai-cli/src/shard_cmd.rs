@@ -245,6 +245,8 @@ async fn cmd_shard_serve(args: ShardServeArgs) -> Result<ShardServeExit> {
             mgr.stop_process()?;
         }
         crate::daemon::DaemonManager::spawn_daemon_child(&[])?;
+        // Give the new daemon a moment to bind its socket before we reconnect.
+        tokio::time::sleep(Duration::from_millis(1000)).await;
 
         (s, e)
     } else {

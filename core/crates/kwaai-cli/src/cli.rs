@@ -188,6 +188,10 @@ pub struct StartArgs {
     /// Allow concurrent instances (don't stop existing processes)
     #[arg(long)]
     pub concurrent: bool,
+
+    /// Also start the shard inference server in the background (auto-rebalancing)
+    #[arg(long)]
+    pub shard: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +207,10 @@ pub struct LogsArgs {
     /// Follow log output in real time
     #[arg(long, short = 'f')]
     pub follow: bool,
+
+    /// Show shard server log instead of the node log
+    #[arg(long)]
+    pub shard: bool,
 }
 
 // ---------------------------------------------------------------------------

@@ -270,6 +270,120 @@ impl DaemonManager {
     }
 }
 
+// ---------------------------------------------------------------------------
+// ShardManager — manages the background `shard serve` child process
+// ---------------------------------------------------------------------------
+
+pub struct ShardManager {
+    pub pid_file: PathBuf,
+}
+
+impl ShardManager {
+    pub fn new() -> Self {
+        let run = run_dir();
+        std::fs::create_dir_all(&run).ok();
+        Self {
+            pid_file: run.join("shard.pid"),
+        }
+    }
+
+    pub fn write_pid(&self, pid: u32) {
+        let _ = std::fs::write(&self.pid_file, pid.to_string());
+    }
+
+    pub fn read_pid(&self) -> Option<u32> {
+        std::fs::read_to_string(&self.pid_file)
+            .ok()
+            .and_then(|t| t.trim().parse().ok())
+    }
+
+    pub fn remove_pid(&self) {
+        let _ = std::fs::remove_file(&self.pid_file);
+    }
+
+    pub fn is_running(&self) -> bool {
+        match self.read_pid() {
+            Some(pid) => {
+                let mut sys = System::new();
+                sys.refresh_process(Pid::from_u32(pid));
+                sys.process(Pid::from_u32(pid)).is_some()
+            }
+            None => false,
+        }
+    }
+
+    /// Stop the shard serve child, if running.
+    pub fn stop_process(&self) {
+        let Some(pid) = self.read_pid() else { return };
+        info!("Stopping shard server PID {}", pid);
+
+        #[cfg(unix)]
+        {
+            use nix::sys::signal::{kill, Signal};
+            use nix::unistd::Pid as NixPid;
+            let _ = kill(NixPid::from_raw(pid as i32), Signal::SIGTERM);
+            for _ in 0..10 {
+                std::thread::sleep(Duration::from_millis(500));
+                let mut sys = System::new();
+                sys.refresh_process(Pid::from_u32(pid));
+                if sys.process(Pid::from_u32(pid)).is_none() {
+                    break;
+                }
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/F"])
+                .output();
+        }
+
+        self.remove_pid();
+    }
+
+    /// Spawn `kwaainet shard serve --auto --auto-rebalance` as a detached
+    /// background process, appending output to `shard.log`.
+    pub fn spawn_shard_child() -> Result<u32> {
+        let exe = std::env::current_exe().context("finding own executable")?;
+        let log = log_dir().join("shard.log");
+        std::fs::create_dir_all(log.parent().unwrap()).ok();
+        let log_file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+            .with_context(|| format!("opening shard log {}", log.display()))?;
+
+        let mut cmd = std::process::Command::new(&exe);
+        cmd.args(["shard", "serve", "--auto-rebalance"]);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.stdout(log_file.try_clone()?);
+            cmd.stderr(log_file);
+            unsafe {
+                cmd.pre_exec(|| {
+                    libc::setsid();
+                    Ok(())
+                });
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.stdout(log_file.try_clone()?);
+            cmd.stderr(log_file);
+            cmd.creation_flags(0x00000008); // DETACHED_PROCESS
+        }
+
+        let child = cmd.spawn().context("spawning shard child")?;
+        let pid = child.id();
+        debug!("Spawned shard child PID {}", pid);
+        std::mem::forget(child);
+        Ok(pid)
+    }
+}
+
 #[cfg(unix)]
 extern "C" {
     #[allow(dead_code)]
