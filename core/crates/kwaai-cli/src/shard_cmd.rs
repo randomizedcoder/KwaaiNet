@@ -350,6 +350,24 @@ async fn cmd_shard_serve(args: ShardServeArgs) -> Result<ShardServeExit> {
             let (rebalance_tx, rebalance_rx) = tokio::sync::oneshot::channel::<()>();
 
             tokio::spawn(async move {
+                // Jitter: 0–60 s derived from our peer ID's last byte so nodes with
+                // the same rebalance_interval_secs don't all fire at the same instant.
+                let jitter_secs: u64 = if let Ok(mut c) = P2PClient::connect(&daemon_addr_rb).await
+                {
+                    if let Ok(h) = c.identify().await {
+                        hex::decode(&h)
+                            .ok()
+                            .and_then(|b| b.last().copied())
+                            .unwrap_or(0) as u64
+                            % 60
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                };
+                tokio::time::sleep(Duration::from_secs(jitter_secs)).await;
+
                 let mut ticker = tokio::time::interval(Duration::from_secs(interval_secs.max(10)));
                 // Skip the first (immediate) tick — we just loaded the shard.
                 ticker.tick().await;
@@ -1086,10 +1104,11 @@ pub async fn discover_chain(
 
 // ── Gap detection ─────────────────────────────────────────────────────────────
 
-/// Query the DHT, find the first uncovered block range, and return (start, end).
+/// Query the DHT and return the best `(start, end)` block range for this node.
 ///
-/// This is the core of `kwaainet shard serve --auto`: each new node fills the
-/// next gap so the network grows toward full coverage organically.
+/// Delegates all coverage logic to `rebalancer::pick_gap_from_chain()` so the
+/// algorithm is unit-testable without a live daemon.  Never returns an error:
+/// if the network is fully covered we join the least-covered window instead.
 async fn pick_gap_blocks(
     client: &mut P2PClient,
     our_peer_id: &PeerId,
@@ -1107,21 +1126,32 @@ async fn pick_gap_blocks(
     )
     .await;
 
-    let mut covered = vec![false; total_blocks];
-    for e in &chain {
-        covered[e.start_block..e.end_block.min(total_blocks)].fill(true);
+    let (start, end) =
+        crate::rebalancer::pick_gap_from_chain(&chain, our_peer_id, total_blocks, target_blocks);
+
+    // Log when joining as redundant (network is fully covered by others).
+    let other_min_cov = {
+        let mut cov = vec![0usize; total_blocks];
+        for e in &chain {
+            if e.peer_id == *our_peer_id {
+                continue;
+            }
+            let s = e.start_block.min(total_blocks);
+            let e2 = e.end_block.min(total_blocks);
+            for c in &mut cov[s..e2] {
+                *c += 1;
+            }
+        }
+        cov.iter().copied().min().unwrap_or(0)
+    };
+    if other_min_cov > 0 {
+        print_info(&format!(
+            "Network fully covered (min {} node(s)/block) — \
+             joining [{}, {}) as redundant.",
+            other_min_cov, start, end
+        ));
     }
 
-    let start = covered.iter().position(|&c| !c).ok_or_else(|| {
-        anyhow::anyhow!(
-            "All {} blocks already served by {} node(s). \
-             Remove --auto or add more nodes.",
-            total_blocks,
-            chain.len()
-        )
-    })?;
-
-    let end = (start + target_blocks).min(total_blocks);
     Ok((start, end))
 }
 

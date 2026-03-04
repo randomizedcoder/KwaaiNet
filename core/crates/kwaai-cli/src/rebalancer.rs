@@ -68,27 +68,77 @@ pub fn check_rebalance(
     Some((gap_start, gap_end))
 }
 
+/// Choose the best block range for a new or rebalancing node to serve.
+///
+/// - If any blocks are uncovered (coverage == 0 from *other* peers), picks
+///   the first such gap.
+/// - If the network is fully covered by others, picks the window of
+///   `target_blocks` consecutive blocks with the lowest total coverage
+///   (join as redundant — still useful for resilience).
+///
+/// Excludes our own peer ID so stale DHT entries for our old range (TTL up
+/// to 360 s) do not falsely mark blocks as covered after a rebalance restart.
+///
+/// Never returns an error — always returns a valid `(start, end)` range.
+pub fn pick_gap_from_chain(
+    chain: &[BlockServerEntry],
+    our_peer_id: &PeerId,
+    total_blocks: usize,
+    target_blocks: usize,
+) -> (usize, usize) {
+    if total_blocks == 0 {
+        return (0, 0);
+    }
+    let target = target_blocks.min(total_blocks);
+
+    // Count per-block coverage excluding ourselves.
+    let mut coverage = vec![0usize; total_blocks];
+    for e in chain {
+        if &e.peer_id == our_peer_id {
+            continue;
+        }
+        let s = e.start_block.min(total_blocks);
+        let end = e.end_block.min(total_blocks);
+        for c in &mut coverage[s..end] {
+            *c += 1;
+        }
+    }
+
+    let min_cov = coverage.iter().copied().min().unwrap_or(0);
+
+    let start = if min_cov == 0 {
+        // Genuine gap: first uncovered block.
+        coverage.iter().position(|&c| c == 0).unwrap_or(0)
+    } else {
+        // Fully covered: minimum-coverage window of `target` blocks.
+        let n_windows = total_blocks.saturating_sub(target) + 1;
+        (0..n_windows)
+            .min_by_key(|&i| coverage[i..i + target].iter().sum::<usize>())
+            .unwrap_or(0)
+    };
+
+    let end = (start + target).min(total_blocks);
+    (start, end)
+}
+
 // ── Unit tests ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Build a fake PeerId from a small integer (deterministic, no crypto).
+    /// Build a deterministic PeerId from a small integer seed.
+    /// `fake_peer(n)` always returns the same PeerId for the same `n`,
+    /// and `fake_peer(a) != fake_peer(b)` for `a != b`.
     fn fake_peer(n: u8) -> PeerId {
-        // A valid multihash-based PeerId: sha2-256 identity multihash prefix + 32 bytes.
-        // Simplest approach: use the identity multihash (0x00 0x04 0x00…) which libp2p accepts.
-        // We use the raw bytes representation with a deterministic public key.
-        use libp2p::identity::Keypair;
-        // Derive a deterministic-ish keypair by seeding a fixed bytes pattern.
-        // Since libp2p doesn't expose seeded key generation in stable API,
-        // we generate real keypairs and just need distinct PeerIds per test.
-        // For tests we use PeerId::random() seeded differently — easiest: just generate N.
-        let _ = n;
-        // Actually use from_bytes on a crafted identity multihash.
-        // identity multihash = varint(0x00) varint(len) data
-        // PeerId from_bytes expects a multihash encoding. Use Ed25519 peer IDs via Keypair.
-        Keypair::generate_ed25519().public().to_peer_id()
+        let mut seed = [0u8; 32];
+        seed[0] = n;
+        let sk = libp2p::identity::ed25519::SecretKey::try_from_bytes(&mut seed)
+            .expect("valid 32-byte seed");
+        let kp = libp2p::identity::Keypair::from(
+            libp2p::identity::ed25519::Keypair::from(sk),
+        );
+        kp.public().to_peer_id()
     }
 
     fn make_entry(peer: PeerId, start: usize, end: usize) -> BlockServerEntry {
@@ -176,5 +226,55 @@ mod tests {
         let result = check_rebalance(&chain, &our_peer, 0, 8, 32, 8, 2);
         // Lowest gap is 8 (not 24).
         assert_eq!(result, Some((8, 16)), "Should pick the lowest gap first");
+    }
+
+    // ── pick_gap_from_chain tests ───────────────────────────────────────────
+
+    /// Empty chain — first gap is at block 0.
+    #[test]
+    fn gap_from_chain_never_panics_on_empty_chain() {
+        let our_peer = fake_peer(1);
+        let result = pick_gap_from_chain(&[], &our_peer, 32, 8);
+        assert_eq!(result, (0, 8), "Empty chain → start at block 0");
+    }
+
+    /// Chain covers [0,16); gap starts at 16.
+    #[test]
+    fn gap_from_chain_finds_genuine_gap() {
+        let our_peer = fake_peer(1);
+        let peer_b = fake_peer(2);
+        let chain = vec![make_entry(peer_b.clone(), 0, 16)];
+        let result = pick_gap_from_chain(&chain, &our_peer, 32, 8);
+        assert_eq!(result, (16, 24), "Should pick the first uncovered block");
+    }
+
+    /// Network fully covered — join the least-covered window.
+    #[test]
+    fn gap_from_chain_joins_least_covered_when_full() {
+        let our_peer = fake_peer(1);
+        let peer_b = fake_peer(2);
+        let peer_c = fake_peer(3);
+        // B covers [0,32), C covers [0,8) and [16,32).
+        // Coverage: [0,8)=2, [8,16)=1, [16,32)=2.
+        // Least-covered 8-block window is [8,16) with sum=8.
+        let chain = vec![
+            make_entry(peer_b.clone(), 0, 32),
+            make_entry(peer_c.clone(), 0, 8),
+            make_entry(peer_c.clone(), 16, 32),
+        ];
+        let result = pick_gap_from_chain(&chain, &our_peer, 32, 8);
+        assert_eq!(result, (8, 16), "Should join least-covered window");
+    }
+
+    /// Our stale DHT entry must not count as coverage when choosing a gap.
+    #[test]
+    fn gap_from_chain_excludes_self() {
+        let our_peer = fake_peer(1);
+        // Our peer (stale) covers [0,32); no other peers.
+        // Without self-exclusion the network looks fully covered.
+        // With self-exclusion coverage is all zeros → picks (0, 8).
+        let chain = vec![make_entry(our_peer.clone(), 0, 32)];
+        let result = pick_gap_from_chain(&chain, &our_peer, 32, 8);
+        assert_eq!(result, (0, 8), "Stale self entry must not count as coverage");
     }
 }
