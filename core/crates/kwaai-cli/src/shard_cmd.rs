@@ -195,7 +195,7 @@ async fn cmd_shard_gap() -> Result<()> {
 async fn cmd_shard_serve(args: ShardServeArgs) -> Result<ShardServeExit> {
     let cfg = KwaaiNetConfig::load_or_create()?;
 
-    let target_blocks = args.blocks.unwrap_or(cfg.blocks) as usize;
+    let target_blocks = snap_to_valid_blocks(args.blocks.unwrap_or(cfg.blocks) as usize);
 
     // ── Gap detection — also yields a P2PClient we reuse for handler registration
     // to avoid a drop/reconnect race that causes "early eof" from p2pd.
@@ -354,13 +354,16 @@ async fn cmd_shard_serve(args: ShardServeArgs) -> Result<ShardServeExit> {
             let model_dir: PathBuf = if let Some(p) = model_path_bg {
                 p
             } else {
-                match hf::resolve_snapshot(&model_id_bg) {
-                    Ok(d) => d,
-                    Err(_) => {
-                        let is_first = start_block == 0;
-                        let is_last = end_block >= total_blocks_bg;
+                let is_first = start_block == 0;
+                let is_last = end_block >= total_blocks_bg;
+                let cached = hf::resolve_snapshot(&model_id_bg).ok().filter(|d| {
+                    hf::blocks_are_cached(d, start_block, end_block, is_first, is_last)
+                });
+                match cached {
+                    Some(d) => d,
+                    None => {
                         print_info(&format!(
-                            "Model not cached — downloading files for blocks [{}, {})…",
+                            "Downloading model files for blocks [{}, {})…",
                             start_block, end_block
                         ));
                         hf::download_for_blocks(
@@ -408,6 +411,12 @@ async fn cmd_shard_serve(args: ShardServeArgs) -> Result<ShardServeExit> {
 
             // Make the shard available to the RPC handler.
             *cell_bg.write().await = Some(shard.clone());
+
+            // Signal daemon that inference is live — daemon will re-announce
+            // with real block coverage instead of [0, 0).
+            let ready_file = crate::daemon::ShardManager::ready_file();
+            let _ = std::fs::write(&ready_file, "");
+            crate::daemon::DaemonManager::new().signal_reannounce();
 
             // Background GC task: evict idle sessions every 30 s.
             tokio::spawn(async move {
@@ -555,6 +564,7 @@ async fn cmd_shard_serve(args: ShardServeArgs) -> Result<ShardServeExit> {
     };
 
     let _ = std::fs::remove_file(local_server_port_file());
+    let _ = std::fs::remove_file(crate::daemon::ShardManager::ready_file());
     println!();
     match exit {
         ShardServeExit::UserStop => print_info("Shard server stopped."),
@@ -1296,12 +1306,14 @@ async fn pick_gap_blocks(
 /// synthesise a stable key from `public_name:start_block` so they still count
 /// for gap detection even though they cannot be routed to directly.
 fn decode_server_info_regular(bytes: &[u8]) -> Option<(String, BlockServerEntry)> {
-    let (start_block, end_block, public_name, peer_id_b58) = decode_server_info_ext(bytes)?;
+    let (start_block, end_block, public_name, peer_id_b58, version) =
+        decode_server_info_ext(bytes)?;
+    if !version_meets_minimum(&version) {
+        return None;
+    }
     let (dedup_key, peer_id) = match peer_id_b58.parse::<PeerId>() {
         Ok(pid) => (pid.to_base58(), pid),
         Err(_) => {
-            // Legacy node: no peer_id field.  Use a synthetic stable key so the
-            // coverage slot is filled.  PeerId::random() is unroutable but harmless.
             let key = format!("legacy:{}:{}", public_name, start_block);
             (key, PeerId::random())
         }
@@ -1374,8 +1386,12 @@ fn decode_server_info_dictionary(bytes: &[u8], out: &mut HashMap<String, BlockSe
             Err(_) => continue,
         };
 
-        if let Some((start_block, end_block, public_name, _)) = decode_server_info_ext(value_bytes)
+        if let Some((start_block, end_block, public_name, _, version)) =
+            decode_server_info_ext(value_bytes)
         {
+            if !version_meets_minimum(&version) {
+                continue;
+            }
             let key = peer_id_b58.clone();
             out.entry(key).or_insert(BlockServerEntry {
                 peer_id,
@@ -1387,9 +1403,45 @@ fn decode_server_info_dictionary(bytes: &[u8], out: &mut HashMap<String, BlockSe
     }
 }
 
+/// Minimum version required for a node's DHT record to be trusted.
+/// Nodes below this version announced stale block data unconditionally.
+const MIN_VERSION: (u32, u32, u32) = (0, 3, 15);
+
+/// Parse `"kwaai-X.Y.Z"` → `(major, minor, patch)`. Returns None if unparseable.
+fn parse_kwaai_version(s: &str) -> Option<(u32, u32, u32)> {
+    let s = s.strip_prefix("kwaai-").unwrap_or(s);
+    let mut parts = s.splitn(3, '.');
+    let maj = parts.next()?.parse().ok()?;
+    let min = parts.next()?.parse().ok()?;
+    let pat = parts
+        .next()?
+        .trim_end_matches(|c: char| !c.is_ascii_digit())
+        .parse()
+        .ok()?;
+    Some((maj, min, pat))
+}
+
+fn version_meets_minimum(version_str: &str) -> bool {
+    match parse_kwaai_version(version_str) {
+        Some(v) => v >= MIN_VERSION,
+        None => false, // unparseable / missing version → pre-0.3.15, exclude
+    }
+}
+
+/// The valid block counts a node may serve.
+const VALID_BLOCK_COUNTS: [usize; 4] = [4, 8, 16, 32];
+
+/// Round `n` to the nearest value in `VALID_BLOCK_COUNTS`.
+pub fn snap_to_valid_blocks(n: usize) -> usize {
+    *VALID_BLOCK_COUNTS
+        .iter()
+        .min_by_key(|&&v| (v as i64 - n as i64).unsigned_abs())
+        .unwrap_or(&4)
+}
+
 /// Core decoder: `Ext(64, msgpack([state, throughput, {start_block, end_block, …}]))`
-/// Returns `(start_block, end_block, public_name, peer_id_b58)`.
-fn decode_server_info_ext(bytes: &[u8]) -> Option<(usize, usize, String, String)> {
+/// Returns `(start_block, end_block, public_name, peer_id_b58, version)`.
+fn decode_server_info_ext(bytes: &[u8]) -> Option<(usize, usize, String, String, String)> {
     let val = rmpv::decode::read_value(&mut &bytes[..]).ok()?;
     let inner_bytes = match &val {
         rmpv::Value::Ext(64, b) => b.as_slice(),
@@ -1419,8 +1471,9 @@ fn decode_server_info_ext(bytes: &[u8]) -> Option<(usize, usize, String, String)
     let end_block = get_i("end_block")? as usize;
     let public_name = get_s("public_name");
     let peer_id_b58 = get_s("peer_id");
+    let version = get_s("version");
 
-    Some((start_block, end_block, public_name, peer_id_b58))
+    Some((start_block, end_block, public_name, peer_id_b58, version))
 }
 
 // ── Forward through chain ─────────────────────────────────────────────────────
@@ -1795,4 +1848,39 @@ fn rand_session_id() -> u64 {
     x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
     x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
     x ^ (x >> 31)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_version_meets_minimum() {
+        assert!(!version_meets_minimum("kwaai-0.3.14"));
+        assert!(!version_meets_minimum("kwaai-0.2.99"));
+        assert!(!version_meets_minimum("kwaai-0.3.0"));
+        assert!(!version_meets_minimum("")); // missing → exclude
+        assert!(!version_meets_minimum("unknown"));
+        assert!(version_meets_minimum("kwaai-0.3.15"));
+        assert!(version_meets_minimum("kwaai-0.3.16"));
+        assert!(version_meets_minimum("kwaai-0.4.0"));
+        assert!(version_meets_minimum("kwaai-1.0.0"));
+    }
+
+    #[test]
+    fn test_snap_to_valid_blocks() {
+        assert_eq!(snap_to_valid_blocks(1), 4);
+        assert_eq!(snap_to_valid_blocks(4), 4);
+        assert_eq!(snap_to_valid_blocks(5), 4);
+        assert_eq!(snap_to_valid_blocks(6), 4);
+        assert_eq!(snap_to_valid_blocks(7), 8);
+        assert_eq!(snap_to_valid_blocks(8), 8);
+        assert_eq!(snap_to_valid_blocks(12), 8);
+        assert_eq!(snap_to_valid_blocks(13), 16);
+        assert_eq!(snap_to_valid_blocks(16), 16);
+        assert_eq!(snap_to_valid_blocks(24), 16);
+        assert_eq!(snap_to_valid_blocks(25), 32);
+        assert_eq!(snap_to_valid_blocks(32), 32);
+        assert_eq!(snap_to_valid_blocks(64), 32);
+    }
 }

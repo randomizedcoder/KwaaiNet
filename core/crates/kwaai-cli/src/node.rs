@@ -20,7 +20,7 @@ use tokio::{io::AsyncWriteExt, net::TcpListener, signal, sync::RwLock};
 use tracing::{info, warn};
 
 use crate::config::KwaaiNetConfig;
-use crate::daemon::DaemonManager;
+use crate::daemon::{DaemonManager, ShardManager};
 use crate::identity::NodeIdentity;
 
 type SharedStorage = Arc<RwLock<DHTStorage>>;
@@ -537,9 +537,21 @@ pub async fn run_node(config: &KwaaiNetConfig) -> Result<()> {
         None
     };
 
+    // Block coverage is only announced when the shard model is fully loaded.
+    // Until then we advertise [0, 0) so the node appears on the map but is
+    // not counted as serving any blocks.
+    let (announce_start, announce_end) = if ShardManager::shard_is_ready() {
+        (
+            config.start_block as i32,
+            config.effective_end_block() as i32,
+        )
+    } else {
+        (0, 0)
+    };
+
     let mut server_info = DHTServerInfo::new(
-        config.start_block as i32,
-        config.effective_end_block() as i32,
+        announce_start,
+        announce_end,
         &public_name,
         using_relay,
         throughput,
@@ -555,8 +567,8 @@ pub async fn run_node(config: &KwaaiNetConfig) -> Result<()> {
         &prefix,
         &repository,
         config.model_total_blocks(),
-        config.start_block as i32,
-        config.effective_end_block() as i32,
+        announce_start,
+        announce_end,
         &server_info,
     )
     .await
@@ -629,10 +641,17 @@ pub async fn run_node(config: &KwaaiNetConfig) -> Result<()> {
                         config.blocks = fresh.blocks;
                     }
                 }
+                let (sb, eb) = if ShardManager::shard_is_ready() {
+                    (config.start_block as i32, config.effective_end_block() as i32)
+                } else {
+                    (0, 0)
+                };
+                server_info.start_block = sb;
+                server_info.end_block = eb;
                 if let Err(e) = announce(
                     &mut client, peer_id, &storage, &bootstrap_peers,
                     &prefix, &repository, config.model_total_blocks(),
-                    config.start_block as i32, config.effective_end_block() as i32, &server_info,
+                    sb, eb, &server_info,
                 ).await {
                     warn!("Re-announce after SIGHUP failed: {}", e);
                 }
@@ -662,9 +681,7 @@ pub async fn run_node(config: &KwaaiNetConfig) -> Result<()> {
                     }
                 }
 
-                // Refresh throughput from cache — picks up any `kwaainet benchmark`
-                // result that was saved since the node started, without re-probing
-                // the network (dl_bps is reused from the startup measurement).
+                // Refresh throughput from cache.
                 let fresh_tps = compute_effective_tps(&config.model, dl_bps, using_relay);
                 if (fresh_tps - server_info.throughput).abs() > 0.05 {
                     info!(
@@ -674,11 +691,18 @@ pub async fn run_node(config: &KwaaiNetConfig) -> Result<()> {
                     server_info.throughput = fresh_tps;
                 }
 
-                info!("Re-announcing to DHT...");
+                let (sb, eb) = if ShardManager::shard_is_ready() {
+                    (config.start_block as i32, config.effective_end_block() as i32)
+                } else {
+                    (0, 0)
+                };
+                server_info.start_block = sb;
+                server_info.end_block = eb;
+                info!("Re-announcing to DHT (shard_ready={})...", sb != 0 || eb != 0);
                 if let Err(e) = announce(
                     &mut client, peer_id, &storage, &bootstrap_peers,
                     &prefix, &repository, config.model_total_blocks(),
-                    config.start_block as i32, config.effective_end_block() as i32, &server_info,
+                    sb, eb, &server_info,
                 ).await {
                     warn!("Re-announce failed: {}", e);
                 }

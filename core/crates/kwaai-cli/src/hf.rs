@@ -136,6 +136,40 @@ fn has_safetensors_shards(dir: &std::path::Path) -> bool {
     shards.iter().all(|p| std::fs::metadata(p).is_ok())
 }
 
+/// Returns true if all SafeTensors files needed for `[start_block, end_block)`
+/// are already present in `snapshot_dir`. Pure local check — no network calls.
+pub fn blocks_are_cached(
+    snapshot_dir: &std::path::Path,
+    start_block: usize,
+    end_block: usize,
+    is_first: bool,
+    is_last: bool,
+) -> bool {
+    let index_path = snapshot_dir.join("model.safetensors.index.json");
+    let Ok(text) = std::fs::read_to_string(&index_path) else {
+        // No index file — can't verify which shards are needed.
+        // Return false so download_for_blocks fetches the index and checks.
+        return false;
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return false;
+    };
+    let Some(weight_map) = json["weight_map"].as_object() else {
+        // No weight_map — single-file model; just check that any shard exists.
+        return has_safetensors_shards(snapshot_dir);
+    };
+
+    let needed: std::collections::HashSet<String> = weight_map
+        .iter()
+        .filter(|(tensor_name, _)| {
+            is_tensor_needed(tensor_name, start_block, end_block, is_first, is_last)
+        })
+        .filter_map(|(_, file_val)| file_val.as_str().map(String::from))
+        .collect();
+
+    needed.iter().all(|f| snapshot_dir.join(f).exists())
+}
+
 /// Return the list of directories to search for HuggingFace model caches.
 fn cache_roots() -> Result<Vec<PathBuf>> {
     let home = dirs::home_dir().ok_or_else(|| anyhow!("cannot determine home directory"))?;

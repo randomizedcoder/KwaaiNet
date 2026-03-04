@@ -372,6 +372,16 @@ impl ShardManager {
         let _ = std::fs::remove_file(&self.pid_file);
     }
 
+    pub fn ready_file() -> PathBuf {
+        run_dir().join("shard.ready")
+    }
+
+    /// Returns true only when the shard process is alive AND the model is fully
+    /// loaded (i.e. shard_cmd has written the `shard.ready` sentinel file).
+    pub fn shard_is_ready() -> bool {
+        Self::ready_file().exists() && Self::new().is_running()
+    }
+
     pub fn is_running(&self) -> bool {
         match self.read_pid() {
             Some(pid) => {
