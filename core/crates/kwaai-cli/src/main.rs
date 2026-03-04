@@ -544,7 +544,9 @@ async fn main() -> Result<()> {
             println!("  Checking for updates…");
             println!();
 
-            match checker.check(args.force).await? {
+            // Always do a live check when the user explicitly runs `kwaainet update`.
+            // The 24-hour cache is only for the background ambient hint, not user-initiated checks.
+            match checker.check(true).await? {
                 None => {
                     print_success("You are running the latest version!");
                 }
