@@ -740,7 +740,10 @@ async fn announce(
     server_info: &DHTServerInfo,
 ) -> Result<()> {
     if start_block == end_block {
-        info!("DHT prefix: {} (shard loading — blocks not yet ready)", prefix);
+        info!(
+            "DHT prefix: {} (shard loading — blocks not yet ready)",
+            prefix
+        );
     } else {
         info!(
             "DHT prefix: {} (blocks .{} – .{})",
@@ -971,11 +974,9 @@ async fn wait_for_bootstrap_peers(
                 // Decode raw bytes → PeerId → base58 for proper comparison.
                 let connected_bootstrap_count = peers
                     .iter()
-                    .filter(|peer_info| {
-                        match PeerId::from_bytes(&peer_info.id) {
-                            Ok(pid) => bootstrap_peer_ids.contains(&pid.to_base58()),
-                            Err(_) => false,
-                        }
+                    .filter(|peer_info| match PeerId::from_bytes(&peer_info.id) {
+                        Ok(pid) => bootstrap_peer_ids.contains(&pid.to_base58()),
+                        Err(_) => false,
                     })
                     .count();
 
@@ -1030,8 +1031,8 @@ async fn handle_rpc_stream(tcp: &mut tokio::net::TcpStream, storage: SharedStora
 
     // Read all request bytes — senders write raw prost bytes then close their
     // write side, so read_to_end terminates naturally when p2pd forwards EOF.
-    use tokio::io::AsyncReadExt as _;
     use prost::Message as _;
+    use tokio::io::AsyncReadExt as _;
     let mut bytes = Vec::new();
     tcp.read_to_end(&mut bytes)
         .await
