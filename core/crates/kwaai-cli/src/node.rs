@@ -884,21 +884,21 @@ async fn send_to_bootstrap(
             }
         };
 
-        match tokio::time::timeout(Duration::from_secs(10), client.connect_peer(addr)).await {
+        match tokio::time::timeout(Duration::from_secs(20), client.connect_peer(addr)).await {
             Ok(Ok(_)) => { /* success, continue */ }
             Ok(Err(e)) => {
                 warn!("Bootstrap connect failed ({}): {}", addr, e);
                 continue;
             }
             Err(_) => {
-                warn!("Bootstrap connect timeout ({}): exceeded 10s", addr);
+                warn!("Bootstrap connect timeout ({}): exceeded 20s", addr);
                 continue;
             }
         }
         tokio::time::sleep(Duration::from_secs(2)).await;
 
         match tokio::time::timeout(
-            Duration::from_secs(10),
+            Duration::from_secs(30),
             client.call_unary_handler(&bp.to_bytes(), "DHTProtocol.rpc_store", &bytes),
         )
         .await
@@ -920,7 +920,7 @@ async fn send_to_bootstrap(
             }
             Ok(Err(e)) => warn!("STORE RPC failed ({}): {}", addr, e),
             Err(_) => {
-                warn!("STORE RPC timeout ({}): exceeded 10s", addr);
+                warn!("STORE RPC timeout ({}): exceeded 30s", addr);
             }
         }
     }
@@ -954,25 +954,28 @@ async fn wait_for_bootstrap_peers(
     let start = tokio::time::Instant::now();
     let max_wait = Duration::from_secs(MAX_WAIT_SECS);
 
-    // Extract bootstrap peer IDs for matching
-    let bootstrap_peer_ids: Vec<Vec<u8>> = bootstrap_peers
+    // Extract bootstrap peer IDs as base58 strings for matching.
+    // list_peers() returns raw protobuf bytes which don't match PeerId::to_bytes()
+    // (multihash-prefixed encoding), so we compare via base58 strings instead.
+    let bootstrap_peer_ids: Vec<String> = bootstrap_peers
         .iter()
         .filter_map(|addr| addr.split("/p2p/").nth(1))
-        .filter_map(|id_str| id_str.parse::<PeerId>().ok())
-        .map(|peer_id| peer_id.to_bytes())
+        .map(|s| s.to_string())
         .collect();
 
     loop {
         // Query connected peers from p2pd
         match client.list_peers().await {
             Ok(peers) => {
-                // Check if any connected peer matches bootstrap peers
+                // Check if any connected peer matches bootstrap peers.
+                // Decode raw bytes → PeerId → base58 for proper comparison.
                 let connected_bootstrap_count = peers
                     .iter()
                     .filter(|peer_info| {
-                        bootstrap_peer_ids
-                            .iter()
-                            .any(|bp_id| bp_id == &peer_info.id)
+                        match PeerId::from_bytes(&peer_info.id) {
+                            Ok(pid) => bootstrap_peer_ids.contains(&pid.to_base58()),
+                            Err(_) => false,
+                        }
                     })
                     .count();
 

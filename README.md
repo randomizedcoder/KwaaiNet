@@ -22,7 +22,7 @@
 
 ## Download
 
-Pre-built binaries for **v0.3.0** are attached to the [latest GitHub Release](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest) — no Rust or Go toolchain required.
+Pre-built binaries for **v0.3.17** are attached to the [latest GitHub Release](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest) — no Rust or Go toolchain required.
 
 ### Shell installer (macOS / Linux)
 
@@ -76,6 +76,7 @@ After installing, jump to [Quick Start](#kwaainet--native-rust-cli).
 ## ✅ Status: Network Live & Operational
 
 **Latest Achievements:**
+- ✅ **v0.3.17 Released** — fix: DHT STORE RPC timeout raised from 10s → 30s (connect timeout 10s → 20s) so nodes reliably appear on map.kwaai.ai; fix: `wait_for_bootstrap_peers` peer ID byte comparison now decodes raw protobuf bytes via `PeerId::from_bytes()` before comparing, eliminating spurious 30s waits
 - ✅ **v0.3.0 Released** — `kwaainet start` no longer overwrites a HuggingFace model path (e.g. `unsloth/Llama-3.1-8B-Instruct`) with an Ollama short name when the network map selects a model; HF model refs are now protected across restarts
 - ✅ **`kwaainet config` subcommand syntax** — `kwaainet config` / `kwaainet config show` prints config; `kwaainet config set KEY VALUE` updates a value (replaces the old `--view` / `--set` flags)
 - ✅ **v0.2.9 Released** — `shard serve --start-block N --blocks M` now syncs `config.yaml` and restarts the node daemon so DHT announces the correct block range; self-dial local TCP bypass prevents `"dial to self"` errors when the coordinator and shard server share a machine
