@@ -60,7 +60,7 @@ cargo install --git https://github.com/Kwaai-AI-Lab/KwaaiNet kwaainet
 | Linux — aarch64 (ARM64) | [kwaainet-aarch64-unknown-linux-gnu.tar.xz](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-aarch64-unknown-linux-gnu.tar.xz) |
 | Windows — x86_64 | [kwaainet-x86_64-pc-windows-msvc.zip](https://github.com/Kwaai-AI-Lab/KwaaiNet/releases/latest/download/kwaainet-x86_64-pc-windows-msvc.zip) |
 
-After installing, run:
+After installing, run (on Windows run as separate commands):
 ```bash
 kwaainet setup && kwaainet benchmark && kwaainet start --daemon
 ```
