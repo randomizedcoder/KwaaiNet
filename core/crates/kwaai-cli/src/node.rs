@@ -426,7 +426,7 @@ pub async fn run_node(config: &KwaaiNetConfig) -> Result<()> {
     // Step 4: Wait for DHT bootstrap (intelligent polling)
     // -----------------------------------------------------------------------
     info!("[4/5] Bootstrapping...");
-    wait_for_bootstrap_peers(&mut client, &bootstrap_peers).await?;
+    dial_and_wait_for_bootstrap(&mut client, &bootstrap_peers).await?;
 
     // -----------------------------------------------------------------------
     // Step 5: Initial DHT announcement
@@ -919,11 +919,13 @@ async fn send_to_bootstrap(
     succeeded > 0
 }
 
-/// Wait for bootstrap peers to connect using intelligent polling
+/// Dial bootstrap peers and wait for confirmation.
 ///
-/// Polls p2pd every 500ms to check if any bootstrap peers are connected.
-/// Returns as soon as ≥1 bootstrap peer connects, or after 30s timeout.
-async fn wait_for_bootstrap_peers(
+/// Explicitly dials each bootstrap peer so p2pd opens the TCP connection
+/// immediately, then polls list_peers() until ≥1 peer is confirmed
+/// connected or the 30 s timeout expires. Called once at startup only —
+/// subsequent re-announcements use send_to_bootstrap() directly.
+async fn dial_and_wait_for_bootstrap(
     client: &mut kwaai_p2p_daemon::P2PClient,
     bootstrap_peers: &[String],
 ) -> Result<()> {
@@ -932,6 +934,24 @@ async fn wait_for_bootstrap_peers(
 
     let start = tokio::time::Instant::now();
     let max_wait = Duration::from_secs(MAX_WAIT_SECS);
+
+    // Proactively dial every bootstrap peer so p2pd opens the TCP
+    // connection now rather than waiting for the DHT to need it.
+    // Track whether at least one dial succeeded so we can suppress the
+    // spurious timeout warning when list_peers() just hasn't caught up yet.
+    let mut dialed_ok = false;
+    for addr in bootstrap_peers {
+        match tokio::time::timeout(
+            Duration::from_secs(10),
+            client.connect_peer(addr),
+        )
+        .await
+        {
+            Ok(Ok(_)) => { info!("Dialed bootstrap peer {}", addr); dialed_ok = true; }
+            Ok(Err(e)) => warn!("Bootstrap dial failed ({}): {}", addr, e),
+            Err(_) => warn!("Bootstrap dial timeout ({}): exceeded 10s", addr),
+        }
+    }
 
     // Extract bootstrap peer IDs as base58 strings for matching.
     // list_peers() returns raw protobuf bytes which don't match PeerId::to_bytes()
@@ -982,12 +1002,18 @@ async fn wait_for_bootstrap_peers(
 
         // Check timeout
         if start.elapsed() >= max_wait {
-            warn!(
-                "⚠️  Bootstrap timeout after {}s — no bootstrap peers connected",
-                MAX_WAIT_SECS
-            );
-            warn!("   Node will still announce, but may not be visible on map initially");
-            return Ok(()); // Don't fail, just continue
+            if dialed_ok {
+                // Dial succeeded — list_peers() just hasn't confirmed it yet.
+                // The connection is live; send_to_bootstrap will use it.
+                info!("Bootstrap peer dialed but not yet visible in peer list — continuing");
+            } else {
+                warn!(
+                    "⚠️  Bootstrap timeout after {}s — no bootstrap peers connected",
+                    MAX_WAIT_SECS
+                );
+                warn!("   Node will still announce, but may not be visible on map initially");
+            }
+            return Ok(());
         }
 
         // Wait before next poll
