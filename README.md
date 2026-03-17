@@ -600,9 +600,9 @@ KwaaiNet uses a **multi-tiered cross-platform build system**:
 - Cleans up stale resources (Unix sockets, etc.)
 
 **For Developers:**
-1. Review [ARCHITECTURE.md](./ARCHITECTURE.md) for technical specifications
+1. Review [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for technical specifications
 2. Explore the [detailed architecture diagrams](#-documentation) below
-3. Check [INTEGRATIONS.md](./INTEGRATIONS.md) for modular integration options
+3. Check [docs/INTEGRATIONS.md](./docs/INTEGRATIONS.md) for modular integration options
 4. Follow [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines
 5. See [CONTRIBUTORS.md](./CONTRIBUTORS.md) for the contributor list and open TODO items
 6. Join community discussions and collaboration channels
@@ -616,28 +616,42 @@ KwaaiNet uses a **multi-tiered cross-platform build system**:
 
 ## 📚 Documentation
 
-### Architecture Overview
+### Project Papers
+
 | Document | Description |
-|----------|-------------|
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | High-level system architecture and component specifications |
-| [INTEGRATIONS.md](./INTEGRATIONS.md) | Optional integration framework for storage and identity systems |
+|---|---|
+| [Whitepaper](./docs/WHITEPAPER.md) | Technical whitepaper: trust-centered architecture, protocols, security properties |
+| [One-Pager](./docs/ONEPAGER.docx) | Non-technical overview for general audiences |
+
+### Architecture & Design
+
+| Document | Description |
+|---|---|
+| [Architecture](./docs/ARCHITECTURE.md) | High-level system architecture and component specifications |
+| [Integrations](./docs/INTEGRATIONS.md) | Optional integration framework for storage and identity systems |
+| [Petals Protocol](./docs/PETALS_PROTOCOL_COMPLETE.md) | Petals/Hivemind DHT protocol implementation guide |
+| [Feature Gap Analysis](./docs/FEATURE_GAP_ANALYSIS.md) | KwaaiNet vs. OpenAI/Petals feature comparison |
 
 ### Detailed Architecture Diagrams
 
 | Document | Diagrams | Coverage |
-|----------|----------|----------|
+|---|---|---|
 | [Component Architectures](./docs/CHALLENGE_ARCHITECTURES.md) | 24 | Technical diagrams for all core components |
 | [Data Flows](./docs/DATA_FLOWS.md) | 16 | Authentication, personal data, privacy patterns |
 | [Deployment Architecture](./docs/DEPLOYMENT_ARCHITECTURE.md) | 18 | Browser, mobile, desktop, edge, enterprise patterns |
 | [Verida Architecture](./docs/VERIDA_ARCHITECTURE.md) | 14 | Protocol bridge, identity, storage, security |
 
 ### Technical Deep Dives
+
 | Document | Description |
-|----------|-------------|
+|---|---|
 | [Candle Engine](./docs/CANDLE_ENGINE.md) | Rust/WASM inference engine technical details |
 | [Hivemind Rust Architecture](./docs/HIVEMIND_RUST_ARCHITECTURE.md) | Distributed deep learning patterns (MoE, DHT, parameter averaging) |
 | [Verida Integration](./docs/VERIDA_INTEGRATION.md) | Optional Verida Network integration example |
-| [Debugging Map Visibility](./docs/DEBUGGING_MAP_VISIBILITY.md) | Why Rust nodes don't appear on map.kwaai.ai and how to fix it |
+| [Debugging Map Visibility](./docs/DEBUGGING_MAP_VISIBILITY.md) | Why nodes may not appear on map.kwaai.ai and how to fix it |
+| [Node Config Requirements](./docs/NODE_CONFIG_REQUIREMENTS.md) | Configuration reference |
+| [Lessons Learned](./docs/LESSONS_LEARNED.md) | Engineering notes and post-mortems |
+| [TODO](./docs/TODO.md) | Open work items and known issues |
 
 ## License
 
