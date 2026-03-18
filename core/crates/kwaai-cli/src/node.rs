@@ -941,13 +941,11 @@ async fn dial_and_wait_for_bootstrap(
     // spurious timeout warning when list_peers() just hasn't caught up yet.
     let mut dialed_ok = false;
     for addr in bootstrap_peers {
-        match tokio::time::timeout(
-            Duration::from_secs(10),
-            client.connect_peer(addr),
-        )
-        .await
-        {
-            Ok(Ok(_)) => { info!("Dialed bootstrap peer {}", addr); dialed_ok = true; }
+        match tokio::time::timeout(Duration::from_secs(10), client.connect_peer(addr)).await {
+            Ok(Ok(_)) => {
+                info!("Dialed bootstrap peer {}", addr);
+                dialed_ok = true;
+            }
             Ok(Err(e)) => warn!("Bootstrap dial failed ({}): {}", addr, e),
             Err(_) => warn!("Bootstrap dial timeout ({}): exceeded 10s", addr),
         }
