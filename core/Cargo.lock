@@ -276,6 +276,8 @@ checksum = "edca88bc138befd0323b20752846e6587272d3b03b0343c8ea28a6f819e6e71f"
 dependencies = [
  "async-trait",
  "axum-core",
+ "axum-macros",
+ "base64 0.22.1",
  "bytes",
  "futures-util",
  "http 1.4.0",
@@ -294,9 +296,11 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_urlencoded",
+ "sha1",
  "sync_wrapper 1.0.2",
  "tokio",
- "tower",
+ "tokio-tungstenite",
+ "tower 0.5.3",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -321,6 +325,17 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
+]
+
+[[package]]
+name = "axum-macros"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57d123550fa8d071b7255cb0cc04dc302baa6c8c4a79f55701552684d8399bce"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -1006,6 +1021,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06d2e3287df1c007e74221c49ca10a95d557349e54b3a75dc2fb14712c751f04"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "dashmap"
+version = "5.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856"
+dependencies = [
+ "cfg-if",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
 ]
 
 [[package]]
@@ -1840,6 +1868,12 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
+version = "0.14.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
+
+[[package]]
+name = "hashbrown"
 version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
@@ -2402,7 +2436,7 @@ dependencies = [
 
 [[package]]
 name = "kwaai-compression"
-version = "0.3.22"
+version = "0.3.23"
 dependencies = [
  "bincode",
  "candle-core",
@@ -2415,7 +2449,7 @@ dependencies = [
 
 [[package]]
 name = "kwaai-core"
-version = "0.3.22"
+version = "0.3.23"
 dependencies = [
  "async-trait",
  "bincode",
@@ -2444,7 +2478,7 @@ dependencies = [
 
 [[package]]
 name = "kwaai-distributed"
-version = "0.3.22"
+version = "0.3.23"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2466,7 +2500,7 @@ dependencies = [
 
 [[package]]
 name = "kwaai-hivemind-dht"
-version = "0.3.22"
+version = "0.3.23"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2485,7 +2519,7 @@ dependencies = [
 
 [[package]]
 name = "kwaai-inference"
-version = "0.3.22"
+version = "0.3.23"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2506,7 +2540,7 @@ dependencies = [
 
 [[package]]
 name = "kwaai-p2p"
-version = "0.3.22"
+version = "0.3.23"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2547,7 +2581,7 @@ dependencies = [
 
 [[package]]
 name = "kwaai-trust"
-version = "0.3.22"
+version = "0.3.23"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2564,7 +2598,7 @@ dependencies = [
 
 [[package]]
 name = "kwaai-wasm"
-version = "0.3.22"
+version = "0.3.23"
 dependencies = [
  "console_error_panic_hook",
  "futures",
@@ -2584,7 +2618,7 @@ dependencies = [
 
 [[package]]
 name = "kwaainet"
-version = "0.3.22"
+version = "0.3.23"
 dependencies = [
  "anyhow",
  "axum",
@@ -3151,6 +3185,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62bb907fe88d54d8d9ce32a3cceab4218ed2f6b7d35617cafe9adf84e43919cb"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "map-server"
+version = "0.3.23"
+dependencies = [
+ "anyhow",
+ "axum",
+ "bs58",
+ "chrono",
+ "dashmap",
+ "futures",
+ "hex",
+ "kwaai-hivemind-dht",
+ "kwaai-p2p",
+ "kwaai-p2p-daemon",
+ "libp2p",
+ "prost 0.12.6",
+ "rmp-serde",
+ "rmpv",
+ "serde",
+ "serde_json",
+ "sha1",
+ "thiserror 1.0.69",
+ "tokio",
+ "tower 0.4.13",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -5154,6 +5217,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-tungstenite"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edc5f74e248dc973e0dbb7b74c7e0d6fcc301c694ff50049504004ef4d0cdcd9"
+dependencies = [
+ "futures-util",
+ "log",
+ "tokio",
+ "tungstenite",
+]
+
+[[package]]
 name = "tokio-util"
 version = "0.7.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5198,6 +5273,17 @@ dependencies = [
 
 [[package]]
 name = "tower"
+version = "0.4.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8fa9be0de6cf49e536ce1851f987bd21a43b771b09473c3549a6c853db37c1c"
+dependencies = [
+ "tower-layer",
+ "tower-service",
+ "tracing",
+]
+
+[[package]]
+name = "tower"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebe5ef63511595f1344e2d5cfa636d973292adc0eec1f0ad45fae9f0851ab1d4"
@@ -5207,6 +5293,23 @@ dependencies = [
  "pin-project-lite",
  "sync_wrapper 1.0.2",
  "tokio",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+]
+
+[[package]]
+name = "tower-http"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e9cd434a998747dd2c4276bc96ee2e0c7a2eadf3cae88e52be55a05fa9053f5"
+dependencies = [
+ "bitflags 2.11.0",
+ "bytes",
+ "http 1.4.0",
+ "http-body 1.0.1",
+ "http-body-util",
+ "pin-project-lite",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -5302,6 +5405,24 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "tungstenite"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18e5b8366ee7a95b16d32197d0b2604b43a0be89dc5fac9f8e96ccafbaedda8a"
+dependencies = [
+ "byteorder",
+ "bytes",
+ "data-encoding",
+ "http 1.4.0",
+ "httparse",
+ "log",
+ "rand 0.8.5",
+ "sha1",
+ "thiserror 1.0.69",
+ "utf-8",
+]
 
 [[package]]
 name = "typenum"
@@ -5457,6 +5578,12 @@ dependencies = [
  "percent-encoding",
  "serde",
 ]
+
+[[package]]
+name = "utf-8"
+version = "0.7.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
 
 [[package]]
 name = "utf8_iter"
