@@ -97,6 +97,87 @@
 
 ---
 
+## map.kwaai.ai — v2 Rewrite
+
+> Full requirements: `docs/MAP_SERVER_V2_REQUIREMENTS.md`
+> Replaces: OpenAI-Petal `docker/kwaainet_health/` (Python/Flask + vanilla JS + Leaflet)
+
+### Backend hardening (Phase 1)
+- [ ] **WebSocket diff protocol** — replace full-snapshot push every 5 s with compact add/update/remove diffs; reduces bandwidth ~95% for established connections.
+- [ ] **`GET /api/nodes/:peer_id`** — individual node detail: VC list, 24 h throughput history, uptime.
+- [ ] **`GET /api/coverage`** — block 0–79 coverage bitmap (`u8[80]` count per block); drives coverage heatmap widget.
+- [ ] **`POST /api/v1/state`** — heartbeat ingest from running nodes; upserts into cache immediately so nodes appear within seconds of starting, not after the 60 s crawl.
+- [ ] **SQLite persistence** — write node cache + 24 h throughput history to `rusqlite`; no cold-start blank map after server restart.
+- [ ] **Rate-limit `/api/nodes`** — 5 s pre-serialised byte cache; single goroutine reserialises; `tower` middleware.
+- [ ] **CORS lockdown** — set `ALLOWED_ORIGINS=https://map.kwaai.ai` in production Dockerfile.
+
+### 3D Globe hero (Phase 2)
+- [ ] **Replace flat NetworkGraph with `globe.gl`** — Three.js 3D globe, nodes as luminous dots (size = throughput, colour = trust tier), rotating hero element.
+- [ ] **Inference arc animation** — geodesic lines connecting coordinator → shard nodes during active sessions; synthesised from `/api/live` session data.
+- [ ] **Coverage heatmap bar** — blocks 0–79 coloured by coverage count (green ≥ 2 nodes, amber = 1, red = gap); clicking a block highlights serving nodes on globe.
+- [ ] **Node detail side panel** — click globe node → slide-in panel with peer_id, blocks, throughput, version, VPK, VC count, first/last seen, 24 h sparkline.
+- [ ] **Operator search + deep link** — search by peer_id / public_name / IP; `?node=Qm...` URL; globe flies to matching node.
+- [ ] **OffscreenCanvas worker** — Three.js globe in offscreen canvas to keep main thread free.
+
+### Engagement & conversion (Phase 3)
+- [ ] **Real endorsement edges in trust graph** — decode `PeerEndorsementVC` subject/issuer DIDs from `/api/nodes`; draw directed arrows; tier filter checkboxes.
+- [ ] **WebGL GEMM benchmark fallback** — twgl.js middle tier between WebGPU and CPU for Safari/Firefox users.
+- [ ] **Benchmark localStorage persist + share URL** — save results across sessions; "Share my score" encodes tps/storage in URL params.
+- [ ] **Calibrated tps conversion factor** — empirical data from known hardware (M2, RTX 4090, A100) to fit better tokens/sec estimate.
+- [ ] **Install funnel: GitHub Release API version** — fetch latest tag dynamically instead of hardcoded `main` branch URL.
+- [ ] **Gamification state machine** — `teaser → benchmarked → installed → node_live`; achievement chip badges; `node_live` detected by polling `/api/nodes` for stored peer ID.
+- [ ] **Windows PowerShell copy fix** — copy button copies curl command even on Windows tab; fix to copy `irm | iex` command.
+
+### Polish & accessibility (Phase 4)
+- [ ] **Framer Motion entrance animations** — panels slide/fade in; globe nodes lerp to new positions.
+- [ ] **`prefers-reduced-motion` support** — disable arc animations and globe auto-rotation.
+- [ ] **WCAG 2.1 AA audit** — `aria-label` on all icon-only buttons; keyboard nav for globe; contrast check.
+- [ ] **Mobile responsive nav** — hamburger menu; sections stack on small screens.
+- [ ] **Favicon** — `public/favicon.svg` SVG version of Kwaai tree logo.
+- [ ] **Lighthouse ≥ 90** — bundle < 300 KB gzip JS, < 50 KB CSS; virtual DOM diff only for side panel.
+
+---
+
+## Bootstrap Server v2 — Rust Port & Radical Reimagination
+
+> Full requirements: `docs/BOOTSTRAP_SERVER_V2_REQUIREMENTS.md`
+> Replaces: OpenAI-Petal `docker/kwaainet_bootstrap/` (50-line shell wrapper around `petals.cli.run_dht`)
+> New crate: `core/crates/kwaai-bootstrap/`
+
+### Phase 1 — Drop-in Rust replacement
+- [ ] **New crate `kwaai-bootstrap`** — `core/crates/kwaai-bootstrap/`; add to workspace; CLI: `kwaainet bootstrap serve / keygen / status`.
+- [ ] **Ed25519 key management** — replace RSA-2048 with Ed25519; same libp2p peer ID derivation (`SHA256(protobuf(pubkey))`); key stored at `~/.kwaainet/bootstrap-identity.bin`.
+- [ ] **Existing peer ID compatibility** — wrap existing RSA keys or run graceful handoff window so established nodes do not need config changes.
+- [ ] **Kademlia DHT node** — reuse `kwaai-hivemind-dht`; persist routing table to SQLite; survives restart in < 2 s.
+- [ ] **Health endpoint** — `GET /health → { status, peers_known, uptime_secs }`; Prometheus metrics on `:9090`.
+- [ ] **Docker image + deploy** — `Dockerfile.bootstrap`, add to `deploy-map.yml` or separate `deploy-bootstrap.yml`.
+- [ ] **Verify drop-in** — existing `kwaainet` nodes connect without config change after DNS swap.
+
+### Phase 2 — Privacy layer
+- [ ] **PoW challenge** — adaptive difficulty (target 50 ms solve on modern CPU); stateless verify (recompute from timestamp epoch); no heap alloc on bad requests.
+- [ ] **TrustedNodeVC fast-lane** — peers with valid VC skip PoW; verified against trust registry signature, no live RPC.
+- [ ] **Encrypted introduction protocol** — ephemeral X25519 key exchange; response encrypted to ephemeral pubkey; bootstrap never logs joining IPs; `intent_hash = SHA256(model_prefix)`.
+- [ ] **Signed peer-list responses** — Ed25519 signature over response; peers verify before using list; protects against BGP hijack / MITM.
+- [ ] **No persistent IP logging** — enforce in code (`log_joins = false` default); document in privacy policy.
+- [ ] **Rate limiting at socket layer** — 10 introductions/IP/min, 1000/IP/hr; enforced before any heap allocation.
+
+### Phase 3 — Federation
+- [ ] **`_kwaai.bootstrap.nodes` DHT key** — community bootstrap nodes self-register; existing nodes auto-discover via DHT crawl.
+- [ ] **`BootstrapOperatorVC` issuance** — `kwaainet bootstrap register --vc <path>` submits to summit-server; returns `BootstrapAdmissionVC`.
+- [ ] **Federation API** — `GET /api/federation/nodes`, `POST /api/federation/register`, `DELETE /api/federation/nodes/:peer_id` (Kwaai admin).
+- [ ] **VC revocation** — revoked `BootstrapAdmissionVC` causes nodes to stop using that bootstrap within 60 s (next DHT crawl).
+- [ ] **Geographic distribution** — deploy Kwaai-operated nodes in US-West, US-East, EU-West, AP-Southeast; anycast DNS (`bootstrap.kwaai.ai`).
+- [ ] **Community capacity target** — design for ≥ 50% of introductions served by community nodes.
+
+### Phase 4 — Peer cache gossip (bootstrap-free rejoin)
+- [ ] **Peer cache gossip protocol** — nodes broadcast signed peer-list snapshot to 3 random peers every 5 min; receivers merge, keep 100 most recent entries.
+- [ ] **Signed cache entries** — originating peer signs; receiver verifies before merging; wire format MessagePack.
+- [ ] **Bootstrap-free rejoin** — on restart, attempt cached peers before contacting bootstrap; only truly new nodes require bootstrap.
+- [ ] **Cache persistence** — store peer cache at `~/.kwaainet/peer-cache.json`; survives node restart.
+- [ ] **Deprecate always-bootstrap-on-restart** — update `kwaainet start` to try peer cache first; bootstrap is fallback.
+
+---
+
 ## Networking
 
 - [ ] **Fix relay fallback** — `metro@kwaai` (peer `...5bZ251`) connects via p2p-circuit relay through `76.91.214.120` instead of direct on configured public IP `75.141.127.202:8080`. Node should establish a direct connection. Investigate NAT traversal / port forwarding and `announceAddrs` config.
