@@ -433,6 +433,16 @@ pub async fn run_node(config: &KwaaiNetConfig) -> Result<()> {
     // -----------------------------------------------------------------------
     info!("[5/5] Announcing to DHT...");
 
+    // Install the SIGHUP handler here — before announce() — so that if
+    // `shard serve` calls signal_reannounce() while announce() is still
+    // running (a ~5 s window), tokio captures the signal instead of
+    // applying the default Unix action (terminate process).
+    #[cfg(unix)]
+    let mut sighup = {
+        use tokio::signal::unix::{signal, SignalKind};
+        signal(SignalKind::hangup()).expect("SIGHUP handler")
+    };
+
     // Determine effective throughput using the Petals formula:
     //   effective_tps = min(compute_tps, network_rps × relay_penalty)
     //   network_rps   = download_bps / (hidden_size × 16)
@@ -587,14 +597,7 @@ pub async fn run_node(config: &KwaaiNetConfig) -> Result<()> {
     let mut reannounce = tokio::time::interval(Duration::from_secs(120));
     reannounce.tick().await; // skip the immediate first tick
 
-    // SIGHUP handler: shard serve sends SIGHUP after updating config.yaml so
-    // the daemon re-announces the new block range immediately (Unix only).
-    // On non-Unix this future never resolves — the branch is dead code.
-    #[cfg(unix)]
-    let mut sighup = {
-        use tokio::signal::unix::{signal, SignalKind};
-        signal(SignalKind::hangup()).expect("SIGHUP handler")
-    };
+    // (SIGHUP handler installed above before announce() — see Step 5 setup)
 
     loop {
         tokio::select! {
