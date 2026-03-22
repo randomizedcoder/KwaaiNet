@@ -705,6 +705,11 @@ pub async fn run_node(config: &KwaaiNetConfig) -> Result<()> {
         }
     }
 
+    // Unannounce before shutting down p2pd so the map reflects the node as
+    // offline immediately rather than waiting up to 360 s for TTL expiry.
+    info!("Unannouncing from DHT...");
+    unannounce(&mut client, peer_id, &storage, &bootstrap_peers, &prefix, &server_info).await;
+
     let _ = daemon.shutdown().await;
     daemon_mgr.remove_pid();
     info!("KwaaiNet node stopped");
@@ -712,8 +717,102 @@ pub async fn run_node(config: &KwaaiNetConfig) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// DHT announcement
+// DHT announcement / unannouncement
 // ---------------------------------------------------------------------------
+
+/// Remove this node's DHT records immediately on clean shutdown.
+///
+/// Sends STORE requests with already-expired timestamps and state=-1 (offline)
+/// to all bootstrap peers. Bootstrap peers drop expired records immediately
+/// instead of waiting for the 360 s TTL to elapse naturally.
+async fn unannounce(
+    client: &mut kwaai_p2p_daemon::P2PClient,
+    peer_id: PeerId,
+    storage: &SharedStorage,
+    bootstrap_peers: &[String],
+    prefix: &str,
+    server_info: &DHTServerInfo,
+) {
+    let offline_info = DHTServerInfo {
+        state: -1, // OFFLINE — tells map.kwaai.ai to remove the node immediately
+        throughput: 0.0,
+        start_block: server_info.start_block,
+        end_block: server_info.end_block,
+        public_name: server_info.public_name.clone(),
+        version: server_info.version.clone(),
+        torch_dtype: server_info.torch_dtype.clone(),
+        using_relay: server_info.using_relay,
+        cache_tokens_left: 0,
+        next_pings: HashMap::new(),
+        adapters: vec![],
+        trust_attestations: vec![],
+        vpk_info: None,
+        peer_id_b58: server_info.peer_id_b58.clone(),
+    };
+    // Use a timestamp 1 second in the past so bootstrap peers treat the
+    // record as already expired and evict it from their routing tables.
+    let expired = get_dht_time() - 1.0;
+
+    let info_bytes = match offline_info.to_msgpack() {
+        Ok(b) => b,
+        Err(e) => { warn!("Unannounce: failed to serialise server info: {}", e); return; }
+    };
+    let subkey = match rmp_serde::to_vec(&peer_id.to_base58()) {
+        Ok(b) => b,
+        Err(e) => { warn!("Unannounce: failed to serialise subkey: {}", e); return; }
+    };
+    let node_info = NodeInfo::from_peer_id(peer_id);
+
+    // Block records — one per announced block
+    let mut keys = Vec::new();
+    let mut subkeys = Vec::new();
+    let mut values = Vec::new();
+    let mut expirations = Vec::new();
+    let mut in_cache = Vec::new();
+    for block in server_info.start_block..server_info.end_block {
+        keys.push(dht_id(&format!("{}.{}", prefix, block)));
+        subkeys.push(subkey.clone());
+        values.push(info_bytes.clone());
+        expirations.push(expired);
+        in_cache.push(false);
+    }
+    let block_req = StoreRequest {
+        auth: Some(RequestAuthInfo::new()),
+        keys,
+        subkeys,
+        values,
+        expiration_time: expirations,
+        in_cache,
+        peer: Some(node_info.clone()),
+    };
+    {
+        let g = storage.read().await;
+        let _ = g.handle_store(block_req.clone());
+    }
+    send_to_bootstrap(client, bootstrap_peers, block_req).await;
+
+    // VPK record — only if this node had VPK enabled
+    if let Some(ref vpk) = server_info.vpk_info {
+        if let Ok(vpk_bytes) = vpk.to_msgpack_bytes() {
+            let vpk_req = StoreRequest {
+                auth: Some(RequestAuthInfo::new()),
+                keys: vec![dht_id("_kwaai.vpk.nodes")],
+                subkeys: vec![subkey.clone()],
+                values: vec![vpk_bytes],
+                expiration_time: vec![expired],
+                in_cache: vec![false],
+                peer: Some(node_info),
+            };
+            {
+                let g = storage.read().await;
+                let _ = g.handle_store(vpk_req.clone());
+            }
+            send_to_bootstrap(client, bootstrap_peers, vpk_req).await;
+        }
+    }
+
+    info!("Unannounced from DHT — node removed from map");
+}
 
 #[allow(clippy::too_many_arguments)]
 async fn announce(
