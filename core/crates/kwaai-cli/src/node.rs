@@ -749,9 +749,11 @@ async fn unannounce(
         vpk_info: None,
         peer_id_b58: server_info.peer_id_b58.clone(),
     };
-    // Use a timestamp 1 second in the past so bootstrap peers treat the
-    // record as already expired and evict it from their routing tables.
-    let expired = get_dht_time() - 1.0;
+    // Use the same 360 s TTL as a regular announcement — Hivemind bootstrap
+    // peers reject updates with a shorter TTL than the existing record.
+    // State=-1 tells map.kwaai.ai the node is offline immediately; the record
+    // then expires naturally after 360 s (same as a missed re-announcement).
+    let expired = get_dht_time() + 360.0;
 
     let info_bytes = match offline_info.to_msgpack() {
         Ok(b) => b,
