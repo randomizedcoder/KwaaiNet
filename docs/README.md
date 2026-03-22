@@ -24,7 +24,7 @@ Each page will label its primary audience at the top to make navigation easier.
 
 - [`getting-started-node.md`](getting-started-node.md)
   Run your first KwaaiNet node, generate identity, and confirm it is connected.
-- `api-quickstart.md` *(planned)*
+- [`api-quickstart.md`](api-quickstart.md)
   Call the OpenAI-compatible HTTP API (`/v1/models`, `/v1/chat/completions`) from Python/JS.
 
 ### 2. Concepts
