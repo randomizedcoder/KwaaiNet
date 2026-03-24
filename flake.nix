@@ -38,6 +38,10 @@
             inherit (cranePkgs) kwaainet map-server;
           }
         );
+        tests = import ./nix/tests {
+          inherit pkgs containers;
+          kwaainet = cranePkgs.kwaainet;
+        };
       in
       {
         packages = {
@@ -49,13 +53,15 @@
             ;
           inherit p2pd protoRs;
         }
-        // containers;
+        // containers
+        // tests.packages;
 
         devShells.default = import ./nix/devshell.nix { inherit pkgs packages; };
 
         checks = {
           inherit (cranePkgs) clippy cargoTest;
-        };
+        }
+        // tests.checks;
 
         formatter = pkgs.nixfmt;
       }
