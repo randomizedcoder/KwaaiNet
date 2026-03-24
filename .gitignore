@@ -95,5 +95,9 @@ keys/
 *.bak
 *.backup
 
+# Nix
+result
+result-*
+
 # OS generated
 .Trash-*

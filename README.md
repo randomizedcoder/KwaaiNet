@@ -84,6 +84,21 @@ brew install kwaai-ai-lab/tap/kwaainet
 cargo binstall kwaainet
 ```
 
+**Nix (reproducible build):**
+
+```bash
+nix build github:Kwaai-AI-Lab/KwaaiNet
+./result/bin/kwaainet --help
+```
+
+Or enter a development shell with all dependencies pinned:
+
+```bash
+nix develop github:Kwaai-AI-Lab/KwaaiNet
+```
+
+See **[nix/README.md](nix/README.md)** for the full Nix guide.
+
 **Build from source:**
 
 ```bash
@@ -186,6 +201,7 @@ Learn more at [kwaai.ai](https://www.kwaai.ai) and the [Kwaai-AI-Lab GitHub orga
 | [docs/network-and-intent-routing.md](docs/network-and-intent-routing.md) | P2P fabric, trust-gated routing, and the full intent lifecycle |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Node architecture, lobes, and Layer 8 stack |
 | [docs/WHITEPAPER.md](docs/WHITEPAPER.md) | Layer 8: The Decentralized AI Trust Layer (whitepaper) |
+| [nix/README.md](nix/README.md) | Nix build, dev shell, and test infrastructure |
 | [docs/contributor-guide.md](docs/contributor-guide.md) | How to contribute — 1 hour / 1 day / 1 week paths |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Development workflow and code contribution guidelines |
 | [CONTRIBUTORS.md](CONTRIBUTORS.md) | Project contributors |
