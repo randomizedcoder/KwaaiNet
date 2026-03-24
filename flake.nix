@@ -18,6 +18,7 @@
       system:
       let
         pkgs = import nixpkgs { inherit system; };
+        lib = pkgs.lib;
         craneLib = crane.mkLib pkgs;
         packages = import ./nix/packages.nix { inherit pkgs; };
         p2pd = pkgs.callPackage ./nix/p2pd.nix { };
@@ -31,6 +32,12 @@
             ;
           inherit (pkgs) lib makeWrapper;
         };
+        containers = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
+          import ./nix/containers.nix {
+            inherit pkgs;
+            inherit (cranePkgs) kwaainet map-server;
+          }
+        );
       in
       {
         packages = {
@@ -41,7 +48,8 @@
             cargoArtifacts
             ;
           inherit p2pd protoRs;
-        };
+        }
+        // containers;
 
         devShells.default = import ./nix/devshell.nix { inherit pkgs packages; };
 
