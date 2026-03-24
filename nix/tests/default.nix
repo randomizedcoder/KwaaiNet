@@ -3,6 +3,7 @@
   pkgs,
   kwaainet,
   containers ? { },
+  crossTests ? { },
 }:
 
 let
@@ -23,5 +24,6 @@ in
   }
   // lib.optionalAttrs (containers != { }) {
     test-containers = containerTest;
-  };
+  }
+  // crossTests;
 }

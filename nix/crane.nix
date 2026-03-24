@@ -13,6 +13,7 @@
   protoRs,
   packages,
   makeWrapper,
+  cargoTarget ? null, # e.g., "aarch64-unknown-linux-gnu" — null for native builds
 }:
 
 let
@@ -66,6 +67,10 @@ let
       }
       BUILDRS
     '';
+  }
+  // lib.optionalAttrs (cargoTarget != null) {
+    CARGO_BUILD_TARGET = cargoTarget;
+    HOST_CC = "cc"; # ensure build scripts use host compiler
   };
 
   # Phase 1: compile all workspace dependencies.
