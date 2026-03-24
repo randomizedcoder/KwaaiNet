@@ -3,10 +3,87 @@
 Nix provides reproducible builds, a development shell with all dependencies
 pinned, and automated tests — all from a single `flake.nix`.
 
+## Goals
 
-## Prerequisites
+The goals of using Nix in this repository are to:
+- **Simplify onboarding** — make it easy to get started with KwaaiNet on any
+  Linux or macOS system
+- **Improve reproducibility** — ensure consistent build environments across
+  developers (no more "it worked on my machine")
+- **Reduce setup friction** — eliminate dependency conflicts and version
+  mismatches; a single `nix build` or `nix develop` is all you need
 
-[Install Nix](https://nixos.org/download/) with flake support enabled.
+Feedback and pull requests are welcome.  If we're missing a tool, please open
+an issue or PR.  See `nix/packages.nix` for package definitions.
+
+---
+
+## Getting started
+
+### 1. Install Nix
+
+Choose **multi-user** (daemon) or **single-user**:
+
+- **Multi-user install** (recommended on most distros):
+  ```bash
+  bash <(curl -L https://nixos.org/nix/install) --daemon
+  ```
+
+- **Single-user install**:
+  ```bash
+  bash <(curl -L https://nixos.org/nix/install) --no-daemon
+  ```
+
+See also: [Nix installation manual](https://nix.dev/manual/nix/2.24/installation/)
+
+#### Video tutorials
+
+| Platform | Video |
+|----------|-------|
+| Ubuntu | [Installing Nix on Ubuntu](https://youtu.be/cb7BBZLhuUY) |
+| Fedora | [Installing Nix on Fedora](https://youtu.be/RvaTxMa4IiY) |
+
+### 2. Enable flakes (if needed)
+
+Nix flakes are an opt-in feature.  If you haven't enabled them yet:
+
+**Option A — one-time flag** (no config change):
+```bash
+nix --extra-experimental-features 'nix-command flakes' develop .
+```
+
+**Option B — permanent** (recommended):
+```bash
+test -d /etc/nix || sudo mkdir /etc/nix
+echo 'experimental-features = nix-command flakes' | sudo tee -a /etc/nix/nix.conf
+```
+
+After this, all `nix build`, `nix develop`, and `nix flake` commands work
+without extra flags.
+
+See also: [Nix Flakes Wiki](https://nixos.wiki/wiki/flakes)
+
+### 3. Build or enter the dev shell
+
+```bash
+# Build kwaainet (produces ./result/bin/kwaainet)
+nix build
+
+# Or enter a development shell with Rust, Go, protobuf, and formatters
+nix develop
+```
+
+### 4. First run considerations
+
+On first execution, Nix will download and build all dependencies — this can
+take several minutes depending on your internet speed.  On subsequent runs Nix
+reuses its cache in `/nix/store/` and startup is essentially instantaneous.
+
+Nix will **not** interact with any system packages you already have installed.
+The Nix versions are isolated and effectively "disappear" when you exit the
+development shell.
+
+---
 
 ## Quick reference
 
@@ -87,6 +164,53 @@ checks.kwaainet-smoke           sandboxed smoke test (--help, setup, identity)
 
 formatter                       nixfmt
 ```
+
+## Understanding the Nix environment
+
+### Nix build vs development shell
+
+Nix provides two distinct modes of operation.  Understanding the difference
+helps avoid confusion:
+
+**`nix build` (derivation)**:
+- Source code is copied into `/nix/store/` (read-only, sandboxed)
+- Build happens in a pure, isolated environment (no network, no home dir)
+- Output is a deterministic, immutable store path
+- Ideal for CI, releases, and reproducible artifacts
+
+**`nix develop` (development shell)**:
+- Works with your actual source code in your working directory
+- Provides the same toolchain as the build, but in an interactive shell
+- You can edit files, run `cargo build`, iterate, and use git normally
+- Tools "disappear" when you exit the shell — nothing is installed globally
+
+The `flake.nix` provides both: `nix build .#kwaainet` for the former,
+`nix develop` for the latter.
+
+See also: [Development environment with nix-shell](https://nixos.wiki/wiki/Development_environment_with_nix-shell)
+
+### What this repository provides
+
+The Nix setup consists of `flake.nix`, `flake.lock`, and modular files in
+`nix/`:
+
+- **`flake.nix`** — main entry point; wires up builds, containers, tests,
+  cross-compilation, and the dev shell
+- **`flake.lock`** — pins exact versions so all developers use identical inputs
+- **`nix/packages.nix`** — shared dependency lists (DRY across build + devshell)
+- **`nix/crane.nix`** — two-phase Rust build (cached deps + source)
+- **`nix/p2pd.nix`** — go-libp2p-daemon Hivemind fork
+- **`nix/proto.nix`** — protobuf codegen derivation
+- **`nix/containers.nix`** — OCI container images
+- **`nix/cross.nix`** — cross-compilation module
+- **`nix/devshell.nix`** — development shell configuration
+- **`nix/tests/`** — test infrastructure (smoke, two-node, containers, cross)
+- **`Makefile`** — convenience targets wrapping nix commands
+
+All Nix packages are sourced from [nixpkgs](https://github.com/NixOS/nixpkgs/)
+and are searchable at [search.nixos.org](https://search.nixos.org/packages?channel=unstable).
+
+---
 
 ## Architecture
 
