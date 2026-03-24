@@ -1,0 +1,72 @@
+name: release-riscv
+
+# Builds kwaainet for riscv64-linux-gnu via the Nix flake and uploads the
+# archive to the GitHub Release created by the main release workflow.
+#
+# Triggered by the same tag pattern as release.yml so both run in parallel
+# on every version tag.  Also supports manual dispatch for testing.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to upload to (e.g. v0.3.25)'
+        required: true
+
+jobs:
+  build-riscv:
+    name: build riscv64-linux-gnu (Nix cross)
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # needed to upload to GitHub Releases
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Build kwaainet for riscv64-linux-gnu
+        run: |
+          nix build .#kwaainet-riscv64-linux-gnu \
+            -o result-kwaainet-riscv64-linux-gnu \
+            --print-build-logs
+
+      - name: Package archive
+        run: |
+          VERSION="${GITHUB_REF_NAME:-${{ inputs.tag }}}"
+          ARCHIVE="kwaainet-riscv64-unknown-linux-gnu-${VERSION}.tar.xz"
+          mkdir -p staging/kwaainet-riscv64-unknown-linux-gnu
+          cp result-kwaainet-riscv64-linux-gnu/bin/kwaainet \
+             staging/kwaainet-riscv64-unknown-linux-gnu/
+          tar -C staging -cJf "${ARCHIVE}" kwaainet-riscv64-unknown-linux-gnu
+          sha256sum "${ARCHIVE}" > "${ARCHIVE}.sha256"
+          echo "ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"
+
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME:-${{ inputs.tag }}}"
+          # Wait up to 5 minutes for the release to exist (main workflow creates it)
+          for i in $(seq 1 30); do
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" &>/dev/null; then
+              break
+            fi
+            echo "Waiting for release $TAG to be created... ($i/30)"
+            sleep 10
+          done
+          gh release upload "$TAG" \
+            "${ARCHIVE}" \
+            "${ARCHIVE}.sha256" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
