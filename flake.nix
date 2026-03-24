@@ -102,6 +102,7 @@
           "p2pd-${targetName}" = cross.p2pd;
           "kwaainet-container-${targetName}" = cross.kwaainet-container;
           "map-server-container-${targetName}" = cross.map-server-container;
+          "kwaainet-all-container-${targetName}" = cross.kwaainet-all-container;
         }) crossTargets;
 
         # Cross smoke tests — verify cross-compiled binaries run under QEMU.

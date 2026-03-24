@@ -10,7 +10,7 @@
 #   make -j all containers cross   build everything in parallel
 
 .PHONY: all kwaainet map-server p2pd proto \
-        containers kwaainet-container map-server-container \
+        containers kwaainet-container map-server-container kwaainet-all-container \
         cross cross-aarch64-gnu cross-aarch64-musl cross-x86_64-musl cross-riscv64-gnu \
         cross-containers cross-containers-aarch64-gnu cross-containers-aarch64-musl cross-containers-x86_64-musl cross-containers-riscv64-gnu \
         check test test-containers test-cross fmt develop clean
@@ -33,13 +33,16 @@ proto:
 
 # --- OCI Containers (Linux only) ---
 
-containers: kwaainet-container map-server-container
+containers: kwaainet-container map-server-container kwaainet-all-container
 
 kwaainet-container:
 	nix build .#kwaainet-container -o result-kwaainet-container
 
 map-server-container:
 	nix build .#map-server-container -o result-map-server-container
+
+kwaainet-all-container:
+	nix build .#kwaainet-all-container -o result-kwaainet-all-container
 
 # --- Cross-compilation (x86_64-linux only) ---
 
@@ -72,18 +75,22 @@ cross-containers: cross-containers-aarch64-gnu cross-containers-aarch64-musl cro
 cross-containers-aarch64-gnu:
 	nix build .#kwaainet-container-aarch64-linux-gnu -o result-kwaainet-container-aarch64-linux-gnu
 	nix build .#map-server-container-aarch64-linux-gnu -o result-map-server-container-aarch64-linux-gnu
+	nix build .#kwaainet-all-container-aarch64-linux-gnu -o result-kwaainet-all-container-aarch64-linux-gnu
 
 cross-containers-aarch64-musl:
 	nix build .#kwaainet-container-aarch64-linux-musl -o result-kwaainet-container-aarch64-linux-musl
 	nix build .#map-server-container-aarch64-linux-musl -o result-map-server-container-aarch64-linux-musl
+	nix build .#kwaainet-all-container-aarch64-linux-musl -o result-kwaainet-all-container-aarch64-linux-musl
 
 cross-containers-x86_64-musl:
 	nix build .#kwaainet-container-x86_64-linux-musl -o result-kwaainet-container-x86_64-linux-musl
 	nix build .#map-server-container-x86_64-linux-musl -o result-map-server-container-x86_64-linux-musl
+	nix build .#kwaainet-all-container-x86_64-linux-musl -o result-kwaainet-all-container-x86_64-linux-musl
 
 cross-containers-riscv64-gnu:
 	nix build .#kwaainet-container-riscv64-linux-gnu -o result-kwaainet-container-riscv64-linux-gnu
 	nix build .#map-server-container-riscv64-linux-gnu -o result-map-server-container-riscv64-linux-gnu
+	nix build .#kwaainet-all-container-riscv64-linux-gnu -o result-kwaainet-all-container-riscv64-linux-gnu
 
 # --- Tests & checks ---
 
@@ -113,13 +120,13 @@ develop:
 clean:
 	rm -f result result-kwaainet result-map-server \
 	      result-p2pd result-proto \
-	      result-kwaainet-container result-map-server-container \
+	      result-kwaainet-container result-map-server-container result-kwaainet-all-container \
 	      result-kwaainet-aarch64-linux-gnu result-map-server-aarch64-linux-gnu result-p2pd-aarch64-linux-gnu \
 	      result-kwaainet-aarch64-linux-musl result-map-server-aarch64-linux-musl result-p2pd-aarch64-linux-musl \
 	      result-kwaainet-x86_64-linux-musl result-map-server-x86_64-linux-musl result-p2pd-x86_64-linux-musl \
-	      result-kwaainet-container-aarch64-linux-gnu result-map-server-container-aarch64-linux-gnu \
-	      result-kwaainet-container-aarch64-linux-musl result-map-server-container-aarch64-linux-musl \
-	      result-kwaainet-container-x86_64-linux-musl result-map-server-container-x86_64-linux-musl \
+	      result-kwaainet-container-aarch64-linux-gnu result-map-server-container-aarch64-linux-gnu result-kwaainet-all-container-aarch64-linux-gnu \
+	      result-kwaainet-container-aarch64-linux-musl result-map-server-container-aarch64-linux-musl result-kwaainet-all-container-aarch64-linux-musl \
+	      result-kwaainet-container-x86_64-linux-musl result-map-server-container-x86_64-linux-musl result-kwaainet-all-container-x86_64-linux-musl \
 	      result-kwaainet-riscv64-linux-gnu result-map-server-riscv64-linux-gnu result-p2pd-riscv64-linux-gnu \
-	      result-kwaainet-container-riscv64-linux-gnu result-map-server-container-riscv64-linux-gnu \
+	      result-kwaainet-container-riscv64-linux-gnu result-map-server-container-riscv64-linux-gnu result-kwaainet-all-container-riscv64-linux-gnu \
 	      result-test-cross-aarch64-gnu result-test-cross-aarch64-musl result-test-cross-x86_64-musl result-test-cross-riscv64-gnu

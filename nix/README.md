@@ -107,9 +107,10 @@ outputs coexist.  Use `make -j` for parallel builds.
 
 | Make target | Nix equivalent | Output |
 |-------------|---------------|--------|
-| `make containers` | build both containers | `result-*-container` |
+| `make containers` | build all containers | `result-*-container` |
 | `make kwaainet-container` | `nix build .#kwaainet-container` | `result-kwaainet-container` |
 | `make map-server-container` | `nix build .#map-server-container` | `result-map-server-container` |
+| `make kwaainet-all-container` | `nix build .#kwaainet-all-container` | `result-kwaainet-all-container` |
 
 > **Note:** Container images use `dockerTools.streamLayeredImage` which is
 > Linux-only.  On macOS (Darwin), container packages are not available.
@@ -144,6 +145,7 @@ packages.p2pd                   go-libp2p-daemon (Hivemind fork)
 packages.protoRs                pre-generated prost Rust code from p2pd.proto
 packages.kwaainet-container     OCI image stream script — kwaainet + p2pd (Linux only)
 packages.map-server-container   OCI image stream script — port 3030 (Linux only)
+packages.kwaainet-all-container OCI image — all binaries in one image (Linux only)
 packages.test-two-node          two-node integration test script
 packages.test-containers        container image test suite (Linux only)
 
@@ -478,6 +480,7 @@ Container images are tagged with the workspace version from `core/Cargo.toml`
 |-----------|-------------|----------|
 | `kwaainet` | — | kwaainet binary + bundled p2pd |
 | `map-server` | 3030/tcp | map-server binary |
+| `kwaainet-all` | 3030/tcp | all binaries (kwaainet + p2pd + map-server) |
 
 All containers include `SSL_CERT_FILE` and `TZDIR` environment variables
 pre-configured for TLS and log timestamps.

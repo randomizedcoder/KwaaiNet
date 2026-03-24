@@ -32,7 +32,7 @@ pkgs.writeShellApplication {
     cleanup() {
       echo ""
       echo "--- Cleaning up containers ---"
-      for name in kwaainet map-server; do
+      for name in kwaainet map-server kwaainet-all; do
         "$RUNTIME" rm -f "test-$name" 2>/dev/null || true
       done
     }
@@ -83,6 +83,7 @@ pkgs.writeShellApplication {
 
     test_container "kwaainet"       "${containers.kwaainet-container}"       "--help"
     test_container "map-server"     "${containers.map-server-container}"     "--help"
+    test_container "kwaainet-all"   "${containers.kwaainet-all-container}"   "--help"
 
     echo ""
     echo "=== Results: $PASS passed, $FAIL failed ==="

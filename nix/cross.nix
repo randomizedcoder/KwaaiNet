@@ -48,5 +48,5 @@ in
     cargoArtifacts
     ;
   inherit p2pd;
-  inherit (containers) kwaainet-container map-server-container;
+  inherit (containers) kwaainet-container map-server-container kwaainet-all-container;
 }

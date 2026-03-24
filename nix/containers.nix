@@ -71,4 +71,26 @@ in
     binary = map-server;
     port = 3030;
   };
+
+  # All-in-one container with every KwaaiNet binary.
+  kwaainet-all-container = pkgs.dockerTools.streamLayeredImage {
+    name = "kwaainet-all";
+    tag = kwaainet.version or "latest";
+
+    contents = baseContents ++ [
+      kwaainet
+      map-server
+    ];
+
+    config = {
+      Entrypoint = [ "${kwaainet}/bin/kwaainet" ];
+      ExposedPorts = {
+        "3030/tcp" = { };
+      };
+      Env = [
+        "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+        "TZDIR=${pkgs.tzdata}/share/zoneinfo"
+      ];
+    };
+  };
 }
