@@ -206,13 +206,13 @@ publish-jobs = ["homebrew"]
 # nested workspace layout.  Suppress cargo-dist's "file is out of date" check.
 allow-dirty = ["ci"]
 targets = [
-    "aarch64-apple-darwin",
-    "x86_64-apple-darwin",
-    "x86_64-unknown-linux-gnu",
-    "aarch64-unknown-linux-gnu",
-    "x86_64-unknown-linux-musl",
-    "aarch64-unknown-linux-musl",
-    "x86_64-pc-windows-msvc",
+    "aarch64-apple-darwin",        # Apple Silicon (most common dev machine)
+    "x86_64-apple-darwin",         # Intel Mac
+    "x86_64-unknown-linux-gnu",    # Linux x64 (servers, desktops)
+    "x86_64-pc-windows-msvc",      # Windows x64
+    "aarch64-unknown-linux-gnu",   # Linux ARM64 (Raspberry Pi, Graviton)
+    "x86_64-unknown-linux-musl",   # Linux x64 static (Alpine, containers)
+    "aarch64-unknown-linux-musl",  # Linux ARM64 static
 ]
 # Build p2pd (Go binary) alongside kwaainet and bundle it in the same archive
 extra-artifacts = [
