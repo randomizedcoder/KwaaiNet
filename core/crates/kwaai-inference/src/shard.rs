@@ -458,16 +458,9 @@ impl TransformerShard {
         );
 
         // Memory-map all safetensors shards (only accessed pages are read).
-        // On Metal devices, weights are loaded on CPU first to avoid BF16→F16
-        // cast errors on older GPUs (Intel/AMD), then moved to the target device
-        // layer-by-layer during the model build.
         // SAFETY: files must not be modified while the model is loaded.
-        let load_device = match device {
-            Device::Metal(_) => &Device::Cpu,
-            other => other,
-        };
         let vb = unsafe {
-            VarBuilder::from_mmaped_safetensors(safetensors_paths, cfg.dtype, load_device)
+            VarBuilder::from_mmaped_safetensors(safetensors_paths, cfg.dtype, device)
                 .map_err(|e| InferenceError::ModelLoadError(format!("mmap safetensors: {e}")))?
         };
 
@@ -510,7 +503,7 @@ impl TransformerShard {
             .join("tokenizer.json");
         let tokenizer = BpeTokenizer::from_file(&tokenizer_path)?;
 
-        // Precompute RoPE tables
+        // Precompute RoPE tables on the same device as the weights.
         let rope = RopeCache::new(&cfg, device)?;
 
         info!(
