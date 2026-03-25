@@ -6,10 +6,9 @@ name: release-riscv
 # Triggered by the same tag pattern as release.yml so both run in parallel
 # on every version tag.  Also supports manual dispatch for testing.
 
+# Disabled: Nix sandbox rsync flakiness causes intermittent build failures.
+# Re-enable by restoring the push.tags trigger below.
 on:
-  push:
-    tags:
-      - 'v[0-9]*.[0-9]*.[0-9]*'
   workflow_dispatch:
     inputs:
       tag:
