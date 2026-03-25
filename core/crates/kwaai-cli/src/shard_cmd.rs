@@ -87,7 +87,20 @@ pub async fn cmd_shard_download(args: ShardDownloadArgs) -> Result<()> {
     println!("  Model: {}", model_id);
     println!();
 
-    let snapshot_dir = hf::download(&model_id, args.hf_token.as_deref()).await?;
+    let snapshot_dir = match (args.start_block, args.blocks) {
+        (Some(start), Some(blocks)) => {
+            let total = cfg.model_total_blocks() as usize;
+            let end = (start + blocks).min(total);
+            let is_first = start == 0;
+            let is_last = end >= total;
+            println!("  Blocks: [{}, {}) of {} (selective download)", start, end, total);
+            println!();
+            hf::download_for_blocks(&model_id, start, end, is_first, is_last, args.hf_token.as_deref()).await?
+        }
+        _ => {
+            hf::download(&model_id, args.hf_token.as_deref()).await?
+        }
+    };
 
     println!();
     print_success(&format!("Saved to: {}", snapshot_dir.display()));
@@ -345,6 +358,7 @@ async fn cmd_shard_serve(args: ShardServeArgs) -> Result<ShardServeExit> {
     let cell_bg = shard_cell.clone();
     let model_id_bg = cfg.model.clone();
     let model_path_bg = args.model_path.clone();
+    let hf_token_bg = args.hf_token.clone();
     let device_bg = device.clone();
     let total_blocks_bg = cfg.model_total_blocks() as usize;
 
@@ -372,7 +386,7 @@ async fn cmd_shard_serve(args: ShardServeArgs) -> Result<ShardServeExit> {
                             end_block,
                             is_first,
                             is_last,
-                            None,
+                            hf_token_bg.as_deref(),
                         )
                         .await
                         .context("selective download for blocks")?

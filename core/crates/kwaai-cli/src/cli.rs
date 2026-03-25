@@ -538,6 +538,11 @@ pub struct ShardServeArgs {
     /// Interval and redundancy threshold are set via `kwaainet config set`.
     #[arg(long)]
     pub auto_rebalance: bool,
+
+    /// HuggingFace access token for downloading private or gated models.
+    /// Can also be set via the HF_TOKEN environment variable.
+    #[arg(long, value_name = "TOKEN")]
+    pub hf_token: Option<String>,
 }
 
 #[derive(Args)]
@@ -637,6 +642,17 @@ pub struct ShardDownloadArgs {
     /// Can also be set via the HF_TOKEN environment variable.
     #[arg(long, value_name = "TOKEN")]
     pub hf_token: Option<String>,
+
+    /// First transformer block to download (0-indexed).
+    /// When set together with --blocks, only weight files for that range are
+    /// fetched — a 10× reduction for large models split across many nodes.
+    /// Omit to download all weight files.
+    #[arg(long)]
+    pub start_block: Option<usize>,
+
+    /// Number of transformer blocks to download (used with --start-block).
+    #[arg(long)]
+    pub blocks: Option<usize>,
 }
 
 // ---------------------------------------------------------------------------

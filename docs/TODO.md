@@ -101,6 +101,22 @@
 
 > Full requirements: `docs/MAP_SERVER_V2_REQUIREMENTS.md`
 > Replaces: OpenAI-Petal `docker/kwaainet_health/` (Python/Flask + vanilla JS + Leaflet)
+> Source to port from: `../OpenAI-Petal`
+
+### Map View (Phase 2 — port + upgrade from OpenAI-Petal)
+- [ ] **Improved geo-location accuracy** — upgrade IP→lat/lon resolution; fall back to `announce_addr` multiaddr parsing before IP-geolocation DB lookup.
+- [ ] **Pin images** *(optional)* — custom marker icons per trust tier (Unknown / Known / Verified / Trusted); SVG icons served from `/static/`.
+- [ ] **Traffic heatmap** — overlay tokens/sec per geographic cell using a weighted heatmap layer (MapLibre `heatmap` layer or Leaflet.heat); intensity driven by `throughput_tps` field from `/api/nodes`.
+- [ ] **Bootstrap diagnostics on mouse-over** — hovering a bootstrap peer marker shows a tooltip with: peer_id, uptime, peers_known, last_seen, latency to server; data from `GET /api/bootstrap/:peer_id`.
+
+### Table View (Phase 2 — port + upgrade from OpenAI-Petal)
+- [ ] **Summary stats row** — pinned header row showing network totals: total nodes (direct + relay counts separate), total tokens/sec, total storage capacity (GB).
+- [ ] **Direct vs relay node count** — distinguish `direct` (reachable via public IP) from `relay` (circuit-relay only) in both the summary row and per-row badge.
+- [ ] **Total tokens/sec column** — per-node `throughput_tps` column with network total in the summary row; fix `-0.0` display.
+- [ ] **Total storage capacity column** — per-node `capacity_gb` from VPK info; network total in summary row.
+- [ ] **Version column** — decode `kwaainet_version` from DHT map (see MEMORY.md "Peer version visibility"); highlight stale versions in amber.
+- [ ] **Uptime column** — `first_seen` → uptime duration string (e.g. `3d 14h`); updated live via WebSocket.
+- [ ] **Blocks capability column** — show block capability as a compact chip list (e.g. `0–31`, `32–63`) rather than raw start/end integers; colour-coded by coverage gaps.
 
 ### Backend hardening (Phase 1)
 - [ ] **WebSocket diff protocol** — replace full-snapshot push every 5 s with compact add/update/remove diffs; reduces bandwidth ~95% for established connections.
