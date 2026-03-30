@@ -206,7 +206,10 @@ The Nix setup consists of `flake.nix`, `flake.lock`, and modular files in
 - **`nix/containers.nix`** — OCI container images
 - **`nix/cross.nix`** — cross-compilation module
 - **`nix/devshell.nix`** — development shell configuration
-- **`nix/tests/`** — test infrastructure (smoke, two-node, containers, cross)
+- **`nix/modules/`** — NixOS service modules (kwaainet, map-server, summit-server)
+  with shared security hardening and helper library
+- **`nix/k8s-manifests/`** — Kubernetes manifest generation
+- **`nix/tests/`** — test infrastructure (smoke, two-node, containers, cross, microVM lifecycle)
 - **`Makefile`** — convenience targets wrapping nix commands
 
 All Nix packages are sourced from [nixpkgs](https://github.com/NixOS/nixpkgs/)
@@ -227,8 +230,23 @@ nix/
   cross.nix               cross-compilation module (reuses crane/p2pd/containers with cross pkgs)
   containers.nix          OCI container images (streamLayeredImage)
   devshell.nix            nix develop environment
+  modules/
+    default.nix           re-exports all NixOS service modules
+    kwaainet.nix          services.kwaainet — P2P inference node
+    map-server.nix        services.kwaainet-map-server — HTTP map UI
+    summit-server.nix     services.kwaainet-summit-server — WebAuthn + DID
+    hardening.nix         shared systemd security baseline
+    lib.nix               shared helpers (portFromBindAddr, mkPackageOption)
+  k8s-manifests/
+    default.nix           entry point — lint, combined output
+    namespace.nix         Namespace YAML
+    deployment.nix        Deployment YAML (kwaainet + map-server)
+    service.nix           ClusterIP Service YAML
+    constants.nix         K8s-specific constants
   overlays/
     cross-fixes.nix       overlay to disable broken tests under cross-compilation
+    cross-cache.nix       overlay to pin build-host tools to native pkgs (binary cache hits)
+    cross-vm.nix          overlay to disable broken tests under QEMU emulation (MicroVMs)
   shell-functions/
     ascii-art.nix         logo display on nix develop entry
   tests/
@@ -237,6 +255,7 @@ nix/
     cross-smoke.nix       QEMU user-mode smoke test for cross-compiled binaries
     smoke.nix             sandboxed: --help, setup, identity show
     two-node.nix          integration: two nodes, distinct identities, port config
+    microvm/              MicroVM lifecycle testing (see microvm-testing.md)
 ```
 
 ### Design decisions
@@ -268,6 +287,12 @@ nix/
   the Rust package.
 - **`packages.nix` as single source of truth** — build inputs are defined once
   and shared by `crane.nix` and `devshell.nix`.
+- **Cross-compilation cache optimization** — `import nixpkgs { crossSystem; }`
+  taints all derivation hashes, causing build-host-only tools to miss the
+  binary cache.  The `cross-cache.nix` overlay pins these tools to a native
+  package set, reducing cross-build overhead from ~235 extra derivations
+  (~2.3 GiB from source) to zero — only the actual Rust cross-compilation
+  happens locally.
 - **Smoke test in sandbox, integration tests outside** — the smoke test verifies
   the binary works without network access (`nix flake check`).  The two-node
   test and container tests need runtime resources (localhost networking, container
@@ -330,7 +355,9 @@ flake.nix
   │
   └─ cross builds (x86_64-linux only)
       └─ nix/cross.nix (for each crossSystem)
-          ├─ pkgsCross = import nixpkgs { localSystem; crossSystem; overlays; }
+          ├─ pkgsNative = import nixpkgs { system; }           ← binary cache hits
+          ├─ pkgsCross  = import nixpkgs { localSystem; crossSystem; overlays; }
+          │   └─ overlays: cross-fixes.nix + cross-cache.nix { inherit pkgsNative; }
           ├─ crane.nix  (reused — craneLib built from pkgsCross)
           ├─ p2pd.nix   (reused — buildGoModule sets GOOS/GOARCH via pkgsCross)
           └─ containers.nix (reused — streamLayeredImage for target arch, Linux only)
@@ -349,9 +376,44 @@ Each language toolchain picks up the cross configuration differently:
 - **OCI containers** — `dockerTools.streamLayeredImage` from `pkgsCross` produces
   images with the correct architecture metadata (e.g., `linux/arm64`).
 
-The `nix/overlays/cross-fixes.nix` overlay disables test suites for a few
-nixpkgs packages (`boehmgc`, `libuv`) that fail under cross-compilation because
-they try to execute target-architecture binaries on the build host.
+Two overlays handle cross-compilation concerns:
+
+- **`nix/overlays/cross-fixes.nix`** disables test suites for a few nixpkgs
+  packages (`boehmgc`, `libuv`) that fail under cross-compilation because they
+  try to execute target-architecture binaries on the build host.
+- **`nix/overlays/cross-cache.nix`** pins build-host-only tools to the native
+  package set so they hit the binary cache (see next section).
+
+#### Binary cache optimization for cross builds
+
+Importing nixpkgs with a `crossSystem` creates a separate package set where
+**every** derivation — including tools that only run on the build host — gets
+a different hash from the regular (native) package set.  This means that
+build-host-only tools like `remarshal` (used internally by crane for TOML
+processing) miss the [cache.nixos.org](https://cache.nixos.org) binary cache
+and must be built from source, along with their entire dependency tree.
+
+In practice, this pulled in ~235 unnecessary derivations (~2.3 GiB) including
+numpy, via the chain: `remarshal` → `rich-argparse` → `rich` →
+`markdown-it-py` → `pytest-regressions` → `numpy`.
+
+The fix is `nix/overlays/cross-cache.nix`, which pins build-host-only tools
+to a native package set (`pkgsNative`) created alongside `pkgsCross` in
+`cross.nix`.  Since these tools never execute on the target, using the native
+(cached) version is safe and correct.
+
+**Result:** cross builds now only compile the 2 Rust-specific derivations
+(dependency layer + workspace binary) — everything else is fetched from the
+binary cache in seconds.
+
+The overlay is extensible: if other build-host tools are found being rebuilt
+from source, add them to the `inherit (pkgsNative) ...` list in
+`cross-cache.nix`.
+
+```bash
+# Verify: should show only 2 derivations to build
+nix build .#kwaainet-aarch64-linux-gnu --dry-run
+```
 
 #### What has been tested
 
@@ -451,8 +513,9 @@ nix build .#test-cross-smoke-riscv64-linux-gnu
 - Cross-compilation is only available from `x86_64-linux` hosts
 - Darwin targets (macOS) require Xcode SDK — not supported from Linux
 - Windows MSVC targets require the MSVC linker — not supported from Linux
-- First cross build is slow (compiles cross toolchain + all deps); subsequent
-  builds use the Nix cache
+- First cross build compiles the cross toolchain and Rust workspace; subsequent
+  builds use the Nix cache.  Build-host tools (Python, remarshal, etc.) are
+  fetched from the binary cache via the `cross-cache.nix` overlay
 
 ## OCI containers
 
@@ -464,7 +527,7 @@ timezone data — no shell, no coreutils.
 # Build and load a container image
 make kwaainet-container
 ./result-kwaainet-container | docker load    # or: podman load
-docker run --rm kwaainet:0.3.25 --help
+docker run --rm kwaainet:0.3.27 --help
 
 # Build all containers in parallel
 make -j containers
@@ -474,7 +537,7 @@ make test-containers
 ```
 
 Container images are tagged with the workspace version from `core/Cargo.toml`
-(e.g., `kwaainet:0.3.25`).
+(e.g., `kwaainet:0.3.27`).
 
 | Container | Exposed port | Contents |
 |-----------|-------------|----------|
@@ -535,6 +598,108 @@ Requires `podman` or `docker`.  For each container image:
 1. Streams and loads the image into the container runtime
 2. Verifies the image size is under 200 MB
 3. Runs the binary inside the container to verify it starts
+
+## MicroVM Lifecycle Testing (Linux only)
+
+Full lifecycle validation of KwaaiNet services running inside NixOS virtual
+machines — real systemd, real networking, real service dependencies. No mocks.
+
+Uses [astro/microvm.nix](https://github.com/astro/microvm.nix) for minimal VMs
+with shared `/nix/store` via 9P. Supports **three architectures**: x86_64
+(KVM), aarch64 (TCG), and riscv64 (TCG) — validating the full stack on every
+platform KwaaiNet targets.
+
+Six VM variants cover everything from a single kwaainet node to a full-stack
+deployment with PostgreSQL, Docker containers, and Kubernetes manifests.
+
+```bash
+# Try it — run the single-node lifecycle test (x86_64)
+make test-lifecycle-single-node
+
+# Run on a specific architecture
+nix run .#kwaainet-lifecycle-full-test-aarch64-single-node
+
+# Run all variants for one architecture
+make test-lifecycle-all-x86_64
+
+# Run all variants on all architectures
+make test-lifecycle-all
+```
+
+For architecture details, variant descriptions, lifecycle phases, NixOS module
+documentation, network setup, and the full file layout, see
+**[MicroVM-Based Lifecycle Testing](microvm-testing.md)**.
+
+## Systemd Security Hardening
+
+### Threat model
+
+KwaaiNet is a large distributed P2P inference network — an attractive target for
+attack. Nodes run on user hardware (Raspberry Pi, Banana Pi, commodity servers),
+making defence-in-depth critical. Each service is sandboxed with systemd security
+directives so that even if the process is compromised, the blast radius is
+contained: no filesystem writes outside the state directory, no kernel access, no
+privilege escalation, and no unnecessary system calls.
+
+### Assessment methodology
+
+We use `systemd-analyze security <service>` inside MicroVM lifecycle tests on all
+three architectures (x86_64, aarch64, riscv64). The score is checked automatically
+on every test run with a threshold that rejects regressions (`<= 2.5`). The
+scoring is done by systemd itself — lower is better, 0.0 is a perfect score.
+
+### What we lock down and why
+
+All directives below are defined in `nix/modules/hardening.nix` and shared by
+every KwaaiNet service. Per-service overrides are listed in the next section.
+
+| Category | Directives | Purpose |
+|----------|-----------|---------|
+| **Filesystem isolation** | `ProtectSystem=strict`, `ProtectHome=true`, `PrivateTmp=true`, `ReadWritePaths` (only state/runtime dirs), `NoExecPaths` (/var, /tmp, /run, /home, /root), `ExecPaths` (/nix/store) | Only the Nix store can execute code; data directories are non-executable. Writes are restricted to the service's state and runtime directories. |
+| **Privilege restriction** | `NoNewPrivileges=true`, `CapabilityBoundingSet=[]`, `AmbientCapabilities=""`, `RestrictSUIDSGID=true` | All Linux capabilities are dropped. No SUID/SGID binaries can be executed. |
+| **Kernel protection** | `ProtectKernelTunables=true`, `ProtectKernelModules=true`, `ProtectKernelLogs=true`, `ProtectControlGroups=true`, `ProtectHostname=true`, `ProtectClock=true` | Prevents sysctl writes, module loading, dmesg access, cgroup manipulation, hostname changes, and clock adjustments. |
+| **Process isolation** | `PrivateDevices=true`, `PrivateIPC=true`, `ProtectProc=invisible`, `ProcSubset=pid`, `LockPersonality=true`, `RestrictNamespaces=true`, `RemoveIPC=true`, `KeyringMode=private` | Hides other processes in /proc, isolates IPC namespaces and kernel keyrings, prevents personality changes and namespace creation. |
+| **Memory security** | `MemoryDenyWriteExecute=true`, `SystemCallArchitectures=native` | Prevents W^X violations (JIT, mprotect tricks) and restricts to native syscall ABI only. |
+| **System call filtering** | Whitelist `@system-service`; blacklist `~@privileged`, `~@mount`, `~@debug`, `~@module`, `~@reboot`, `~@swap`, `~@clock`, `~@cpu-emulation`, `~@obsolete`, `~@raw-io`, `~@resources` | Only system calls needed for a normal network service are permitted. |
+| **Network restriction** | `RestrictAddressFamilies` (AF_INET, AF_INET6, AF_UNIX only), `IPAddressDeny=any` (baseline), `SocketBindAllow`/`SocketBindDeny` (per-service) | Baseline denies all IP traffic; each service explicitly allows only what it needs. Socket binding is restricted to the configured port. |
+| **Device policy** | `DevicePolicy=closed`, `DeviceAllow=""` | No device access beyond /dev/null, /dev/zero, /dev/urandom. |
+| **Misc** | `NotifyAccess=none`, `UMask=0027`, `RestrictRealtime=true` | Denies sd_notify from any process, restricts file creation permissions, prevents realtime scheduling. |
+| **Resource limits** | Per-service slice with `MemoryHigh`, `MemoryMax`, `CPUQuota`, `TasksMax` | Prevents resource exhaustion from affecting the host. |
+
+### Per-service overrides
+
+| Service | Override | Reason |
+|---------|---------|--------|
+| **kwaainet** | `IPAddressAllow=any`, `SocketBindAllow=tcp:<port> udp:<port>` | P2P node needs unrestricted IP connectivity; binds configured port (default 8080) for TCP and UDP. |
+| **map-server** | `IPAddressAllow=any`, `SocketBindAllow=tcp:<port>` | HTTP API; binds configured port (default 3030). |
+| **summit-server** | `IPAddressAllow=any`, `SocketBindAllow=tcp:<port>` | HTTP API + PostgreSQL client; binds configured port (default 3000). |
+
+### What we can't lock down and why
+
+| Directive | Why not |
+|-----------|---------|
+| `PrivateNetwork=true` | Impossible — all services need TCP/UDP for P2P or HTTP. |
+| `PrivateUsers=true` | Conflicts with `User=kwaainet` (static system user) and `DynamicUser=true`; breaks file ownership semantics. |
+| `RootDirectory`/`RootImage` | Would require a complete chroot. Nix's hermetic `/nix/store` already provides equivalent isolation for executables. |
+| `RestrictFileSystems` | Depends on VM filesystem types (9p, ext4, tmpfs); needs careful testing per deployment target. Deferred to a future pass. |
+| IP address filtering | Services accept connections from any IP (P2P by design); filtering is handled at the firewall/network level rather than systemd level. |
+
+### Score and verification
+
+The security score is checked automatically in every lifecycle test run. To
+verify manually:
+
+```bash
+# Run lifecycle test — score is checked automatically (threshold <= 2.5)
+nix run .#kwaainet-lifecycle-full-test-x86_64-single-node
+
+# Or check interactively inside a running VM
+systemd-analyze security kwaainet
+systemd-analyze security kwaainet-map-server
+systemd-analyze security kwaainet-summit-server
+```
+
+---
 
 ## Updating dependencies
 
