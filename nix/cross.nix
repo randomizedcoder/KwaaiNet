@@ -2,6 +2,10 @@
 #
 # Called once per target from flake.nix.  Reuses crane.nix, p2pd.nix, and
 # containers.nix unchanged — cross-compilation is handled by the cross pkgs.
+#
+# Cache optimization: build-host-only tools (remarshal, etc.) are pinned to
+# the native package set via cross-cache.nix so they hit the binary cache
+# instead of being rebuilt from source (~235 derivations / ~2.3 GiB saved).
 {
   nixpkgs,
   crane,
@@ -13,10 +17,16 @@
 }:
 
 let
+  # Native package set — tools from here match the binary cache hashes.
+  pkgsNative = import nixpkgs { system = system; };
+
   pkgsCross = import nixpkgs {
     localSystem = system;
     inherit crossSystem;
-    overlays = [ (import ./overlays/cross-fixes.nix) ];
+    overlays = [
+      (import ./overlays/cross-fixes.nix)
+      (import ./overlays/cross-cache.nix { inherit pkgsNative; })
+    ];
   };
 
   craneLib = crane.mkLib pkgsCross;
