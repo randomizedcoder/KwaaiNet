@@ -5,6 +5,10 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     crane.url = "github:ipetkov/crane";
+    microvm = {
+      url = "github:astro/microvm.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -13,6 +17,7 @@
       nixpkgs,
       flake-utils,
       crane,
+      microvm,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
@@ -40,60 +45,43 @@
         );
 
         # --- Cross-compilation (x86_64-linux only) ---
-        crossTargets = lib.optionalAttrs (system == "x86_64-linux") {
-          aarch64-linux-gnu = import ./nix/cross.nix {
-            inherit
-              nixpkgs
-              crane
-              system
-              protoRs
-              ;
-            targetName = "aarch64-linux-gnu";
-            crossSystem = {
-              config = "aarch64-unknown-linux-gnu";
-            };
+        crossTargetDefs = {
+          aarch64-linux-gnu = {
+            crossConfig = "aarch64-unknown-linux-gnu";
             cargoTarget = "aarch64-unknown-linux-gnu";
           };
-          aarch64-linux-musl = import ./nix/cross.nix {
-            inherit
-              nixpkgs
-              crane
-              system
-              protoRs
-              ;
-            targetName = "aarch64-linux-musl";
-            crossSystem = {
-              config = "aarch64-unknown-linux-musl";
-            };
+          aarch64-linux-musl = {
+            crossConfig = "aarch64-unknown-linux-musl";
             cargoTarget = "aarch64-unknown-linux-musl";
           };
-          x86_64-linux-musl = import ./nix/cross.nix {
-            inherit
-              nixpkgs
-              crane
-              system
-              protoRs
-              ;
-            targetName = "x86_64-linux-musl";
-            crossSystem = {
-              config = "x86_64-unknown-linux-musl";
-            };
+          x86_64-linux-musl = {
+            crossConfig = "x86_64-unknown-linux-musl";
             cargoTarget = "x86_64-unknown-linux-musl";
           };
-          riscv64-linux-gnu = import ./nix/cross.nix {
-            inherit
-              nixpkgs
-              crane
-              system
-              protoRs
-              ;
-            targetName = "riscv64-linux-gnu";
-            crossSystem = {
-              config = "riscv64-unknown-linux-gnu";
-            };
+          riscv64-linux-gnu = {
+            crossConfig = "riscv64-unknown-linux-gnu";
             cargoTarget = "riscv64gc-unknown-linux-gnu";
           };
         };
+
+        crossTargets = lib.optionalAttrs (system == "x86_64-linux") (
+          builtins.mapAttrs (
+            name: def:
+            import ./nix/cross.nix {
+              inherit
+                nixpkgs
+                crane
+                system
+                protoRs
+                ;
+              targetName = name;
+              crossSystem = {
+                config = def.crossConfig;
+              };
+              cargoTarget = def.cargoTarget;
+            }
+          ) crossTargetDefs
+        );
 
         # Flatten cross targets into suffixed package names.
         crossPackages = lib.concatMapAttrs (targetName: cross: {
@@ -122,9 +110,24 @@
           }
         ) crossTargets;
 
+        # K8s manifests (Linux only)
+        k8sManifests = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
+          import ./nix/k8s-manifests { inherit pkgs lib; }
+        );
+
         tests = import ./nix/tests {
-          inherit pkgs containers crossTests;
+          inherit
+            pkgs
+            containers
+            crossTests
+            nixpkgs
+            k8sManifests
+            microvm
+            crossTargets
+            ;
           kwaainet = cranePkgs.kwaainet;
+          map-server = cranePkgs.map-server;
+          summit-server = cranePkgs.summit-server or null; # null until summit-server added to workspace
         };
       in
       {
@@ -137,9 +140,13 @@
             ;
           inherit p2pd protoRs;
         }
+        // lib.optionalAttrs (cranePkgs ? summit-server) {
+          inherit (cranePkgs) summit-server;
+        }
         // containers
         // crossPackages
-        // tests.packages;
+        // tests.packages
+        // (k8sManifests.packages or { });
 
         devShells.default = import ./nix/devshell.nix { inherit pkgs packages; };
 

@@ -11,6 +11,7 @@ members = [
     "crates/kwaai-cli",
     "crates/kwaai-trust",
     "crates/map-server",
+    # "crates/summit-server",  # Uncomment after updating Cargo.lock (requires axum-extra)
 ]
 
 # Root package for examples

@@ -32,6 +32,7 @@ let
       port ? null,
       extraContents ? [ ],
       extraConfig ? { },
+      entrypoint ? [ "${binary}/bin/${name}" ],
     }:
     pkgs.dockerTools.streamLayeredImage ({
       inherit name;
@@ -40,11 +41,16 @@ let
       contents = baseContents ++ [ binary ] ++ extraContents;
 
       config = {
-        Entrypoint = [ "${binary}/bin/${name}" ];
+        Entrypoint = entrypoint;
         Env = [
           "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
           "TZDIR=${pkgs.tzdata}/share/zoneinfo"
         ];
+        Labels = {
+          "nix.inputs.hash" = builtins.hashString "sha256" (
+            builtins.toJSON (map toString ([ binary ] ++ baseContents ++ extraContents))
+          );
+        };
       }
       // (
         if port != null then
@@ -73,24 +79,11 @@ in
   };
 
   # All-in-one container with every KwaaiNet binary.
-  kwaainet-all-container = pkgs.dockerTools.streamLayeredImage {
+  kwaainet-all-container = mkContainer {
     name = "kwaainet-all";
-    tag = kwaainet.version or "latest";
-
-    contents = baseContents ++ [
-      kwaainet
-      map-server
-    ];
-
-    config = {
-      Entrypoint = [ "${kwaainet}/bin/kwaainet" ];
-      ExposedPorts = {
-        "3030/tcp" = { };
-      };
-      Env = [
-        "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-        "TZDIR=${pkgs.tzdata}/share/zoneinfo"
-      ];
-    };
+    binary = kwaainet;
+    port = 3030;
+    entrypoint = [ "${kwaainet}/bin/kwaainet" ];
+    extraContents = [ map-server ];
   };
 }

@@ -13,7 +13,10 @@
         containers kwaainet-container map-server-container kwaainet-all-container \
         cross cross-aarch64-gnu cross-aarch64-musl cross-x86_64-musl cross-riscv64-gnu \
         cross-containers cross-containers-aarch64-gnu cross-containers-aarch64-musl cross-containers-x86_64-musl cross-containers-riscv64-gnu \
-        check test test-containers test-cross fmt develop clean
+        check test test-containers test-cross \
+        test-lifecycle-all test-lifecycle-all-x86_64 test-lifecycle-all-aarch64 test-lifecycle-all-riscv64 \
+        network-setup network-teardown k8s-manifests \
+        fmt develop clean
 
 all: kwaainet map-server
 
@@ -109,6 +112,35 @@ test-cross:
 	nix build .#test-cross-smoke-x86_64-linux-musl -o result-test-cross-x86_64-musl
 	nix build .#test-cross-smoke-riscv64-linux-gnu -o result-test-cross-riscv64-gnu
 
+# --- MicroVM Lifecycle Tests (Linux only) ---
+# Supports per-architecture tests: test-lifecycle-<variant>-<arch>
+# Default (no arch suffix) uses x86_64.
+
+test-lifecycle-%:
+	nix run .#kwaainet-lifecycle-full-test-$*
+
+test-lifecycle-all:
+	nix run .#kwaainet-lifecycle-test-all
+
+# Per-architecture test suites
+test-lifecycle-all-x86_64:
+	nix run .#kwaainet-lifecycle-test-all -- --arch=x86_64
+
+test-lifecycle-all-aarch64:
+	nix run .#kwaainet-lifecycle-test-all -- --arch=aarch64
+
+test-lifecycle-all-riscv64:
+	nix run .#kwaainet-lifecycle-test-all -- --arch=riscv64
+
+network-setup:
+	sudo nix run .#kwaainet-network-setup
+
+network-teardown:
+	sudo nix run .#kwaainet-network-teardown
+
+k8s-manifests:
+	nix build .#kwaainet-k8s-manifests -o result-k8s-manifests
+
 # --- Utilities ---
 
 fmt:
@@ -121,12 +153,16 @@ clean:
 	rm -f result result-kwaainet result-map-server \
 	      result-p2pd result-proto \
 	      result-kwaainet-container result-map-server-container result-kwaainet-all-container \
+	      result-summit-server-container result-k8s-manifests \
 	      result-kwaainet-aarch64-linux-gnu result-map-server-aarch64-linux-gnu result-p2pd-aarch64-linux-gnu \
 	      result-kwaainet-aarch64-linux-musl result-map-server-aarch64-linux-musl result-p2pd-aarch64-linux-musl \
 	      result-kwaainet-x86_64-linux-musl result-map-server-x86_64-linux-musl result-p2pd-x86_64-linux-musl \
+	      result-kwaainet-riscv64-linux-gnu result-map-server-riscv64-linux-gnu result-p2pd-riscv64-linux-gnu \
 	      result-kwaainet-container-aarch64-linux-gnu result-map-server-container-aarch64-linux-gnu result-kwaainet-all-container-aarch64-linux-gnu \
 	      result-kwaainet-container-aarch64-linux-musl result-map-server-container-aarch64-linux-musl result-kwaainet-all-container-aarch64-linux-musl \
 	      result-kwaainet-container-x86_64-linux-musl result-map-server-container-x86_64-linux-musl result-kwaainet-all-container-x86_64-linux-musl \
-	      result-kwaainet-riscv64-linux-gnu result-map-server-riscv64-linux-gnu result-p2pd-riscv64-linux-gnu \
 	      result-kwaainet-container-riscv64-linux-gnu result-map-server-container-riscv64-linux-gnu result-kwaainet-all-container-riscv64-linux-gnu \
-	      result-test-cross-aarch64-gnu result-test-cross-aarch64-musl result-test-cross-x86_64-musl result-test-cross-riscv64-gnu
+	      result-test-cross-aarch64-gnu result-test-cross-aarch64-musl result-test-cross-x86_64-musl result-test-cross-riscv64-gnu \
+	      result-vm result-microvm-* result-lifecycle-* \
+	      result-cross-aarch64-gnu-all result-cross-aarch64-gnu-all-* \
+	      result-[0-9] result-[0-9][0-9]

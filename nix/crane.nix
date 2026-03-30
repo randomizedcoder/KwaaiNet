@@ -107,6 +107,10 @@ in
 
   map-server = mkBin "map-server" { };
 
+  # summit-server = mkBin "summit-server" { };
+  # Uncomment after adding "crates/summit-server" to core/Cargo.toml workspace
+  # and running `cd core && cargo update` to resolve axum-extra.
+
   # Clippy lint check — run via `nix flake check`.
   clippy = craneLib.cargoClippy (
     commonArgs
