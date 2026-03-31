@@ -196,11 +196,17 @@ Six variants exercise different aspects of KwaaiNet. Each uses either
 | Variant | Port offset | SSH port | Serial port | Virtio port |
 |---------|-------------|----------|-------------|-------------|
 | single-node | 0 | 2222 | 7001 | 7002 |
-| two-node | 0 | — (TAP) | 7001 | 7002 |
+| two-node VM-A | 0 | — (TAP) | 7001 | 7002 |
+| two-node VM-B | 600 | — (TAP) | 7013 | 7014 |
+| two-node-services VM-A | 100 | — (TAP) | 7003 | 7004 |
+| two-node-services VM-B | 700 | — (TAP) | 7015 | 7016 |
 | map-server | 200 | 2224 | 7005 | 7006 |
 | full-stack | 300 | 2225 | 7007 | 7008 |
 | docker | 400 | 2226 | 7009 | 7010 |
 | k8s | 500 | 2227 | 7011 | 7012 |
+
+Two-node VMs use different port offsets so their serial/virtio console TCP
+ports don't collide. Each VM also gets a unique MAC address on the bridge.
 
 For aarch64, add 1000 to console ports and use SSH base 3222.
 For riscv64, add 2000 to console ports and use SSH base 4222.
@@ -364,11 +370,52 @@ Host
 ### Setup and teardown
 
 ```bash
+# 1. Check host prerequisites (KVM, QEMU, etc.)
 nix run .#kwaainet-check-host
+
+# 2. Create bridge + TAP devices (requires sudo)
 sudo nix run .#kwaainet-network-setup
+
+# 3. Run two-node tests
 make test-lifecycle-two-node
+
+# 4. Tear down when done
 sudo nix run .#kwaainet-network-teardown
 ```
+
+Example output from `sudo nix run .#kwaainet-network-setup`:
+
+```
+=== KwaaiNet MicroVM Network Setup ===
+Setting up network for user: das
+Creating bridge kwaaibr0...
+Creating TAP device kwaitap0 for user das...
+Creating TAP device kwaitap1 for user das...
+vhost-net enabled (ACL for das)
+Disabled bridge-nf-call (L2 bypass for bridged traffic)
+Configuring NAT...
+
+Network ready. Two-node VMs will use:
+  VM-A: fd00:c0aa:1::a
+  VM-B: fd00:c0aa:1::b
+  Bridge: kwaaibr0
+```
+
+The script creates a Linux bridge (`kwaaibr0`) with two multiqueue TAP
+devices (`kwaitap0`, `kwaitap1`) owned by the calling user, enables IPv6
+forwarding, disables `bridge-nf-call-iptables` so bridged L2 traffic
+bypasses the host's nftables rules, and adds nftables masquerade rules
+for the `fd00:c0aa:1::/48` prefix. The TAP devices are attached to the
+bridge so the two VMs can communicate at Layer 2, which is required for
+P2P peer discovery.
+
+The `bridge-nf-call` disable is critical: when the `br_netfilter` kernel
+module is loaded (which happens automatically with the bridge module), it
+forces all bridged Ethernet frames through the host's iptables/nftables
+chains. Without disabling this, inter-VM traffic gets dropped by the
+host firewall even though the VMs are on the same bridge.
+
+The teardown script removes the TAP devices, bridge, and nftables rules.
 
 ---
 
@@ -584,17 +631,37 @@ cleanly across all architectures. Rust `initial_peers` config test passes.
 | 5b | Identity persistence (Peer ID stable across restart) | single-node |
 | 5c | Dependency failure (stop postgresql, verify summit recovery) | full-stack |
 
-#### Runtime status
+#### x86_64 runtime results (2026-03-30)
 
-New phases have not yet been validated at runtime. Expected behavior:
-- **x86_64 (KVM)**: All new phases should pass. Journal markers and CLI output
-  are fast enough for KVM timeouts.
-- **aarch64/riscv64 (TCG)**: New phases using `kwaainet status`, `kwaainet identity show`,
-  or journal polling may SKIP under TCG due to CLI slowness. This is expected —
-  the test uses `result_skip` rather than `result_fail` for timeout-sensitive checks.
-- **two-node/two-node-services**: Require TAP/bridge setup before running.
-  Runtime peer injection depends on the new `kwaainet config set initial_peers`
-  support added in this changeset.
+All expanded lifecycle phases validated at runtime on x86_64 (KVM):
+
+| Variant | Result | Checks | Time | Notes |
+|---------|--------|--------|------|-------|
+| single-node | PASS | all | ~50s | All new phases (3c/3e/4a/4c/5a/5b) pass |
+| map-server | PASS | all | ~1m10s | Deep map-server checks (4d-map) pass, restart recovery works |
+| docker | PASS | all | ~3m30s | Container load/run inside VM |
+| k8s | PASS | all | ~1m15s | Docker active, minikube/kubectl SKIPs expected |
+| two-node | PASS | 28/28 | 3m5s | Full P2P lifecycle: IPv6 ping, peer discovery, clean shutdown |
+| two-node-services | PASS | 23/23 | 6m32s | P2P + map-server discovery (4 SKIPs: TCP reachability + map crawl timing) |
+
+**Two-node test details:**
+- Both VMs boot, get distinct Peer IDs
+- Bidirectional IPv6 ping over TAP bridge
+- Bootstrap peer injection via `kwaainet config set initial_peers`
+- DHT bootstrap and peer discovery detected in journal
+- Clean two-phase shutdown (SSH reboot → SIGTERM fallback)
+
+**Expected SKIPs in two-node variants:**
+- TCP :8080 reachability — NixOS firewall blocks external TCP by default; P2P uses its own protocol layer
+- Map-server node discovery — the crawl interval may not complete within the test window; the map-server API endpoints are validated separately
+
+#### Cross-architecture note
+
+aarch64/riscv64 (TCG): New phases using `kwaainet status`, `kwaainet identity show`,
+or journal polling may SKIP under TCG due to CLI slowness. This is expected —
+the test uses `result_skip` rather than `result_fail` for timeout-sensitive checks.
+Two-node tests on cross-arch have not been validated (requires TAP setup + TCG,
+which is very slow).
 
 ### Infrastructure checks
 
@@ -611,7 +678,7 @@ New phases have not yet been validated at runtime. Expected behavior:
 - **docker run --help**: Container images are CLI tools that don't accept `--help`; the important test is `docker load` which succeeds on x86_64/aarch64.
 - **docker load on riscv64**: Container images are built for x86_64 and cannot be loaded into riscv64 Docker. Cross-arch container builds would fix this.
 - **minikube/kubectl**: Not included in the k8s VM closure; the test validates Docker service readiness and VM lifecycle.
-- **two-node/two-node-services**: Require host TAP/bridge setup before running — skipped in automated testing.
+- **two-node/two-node-services**: Require host TAP/bridge setup before running (`sudo nix run .#kwaainet-network-setup`). Both pass on x86_64 after setup.
 - **Node verify under TCG**: `kwaainet identity show` and `kwaainet status` CLI commands time out under QEMU TCG emulation. The service itself is active and healthy (verified via systemd), but CLI commands are too slow under software emulation. New deep phases (3c, 4a, 5b) gracefully SKIP when output is empty.
 - **Clean exit under concurrent load**: When running multiple aarch64/riscv64 QEMU instances simultaneously, `systemctl poweroff` can take longer than the `waitExit` timeout. Tests pass when run individually. Timeouts: 120s (aarch64), 180s (riscv64).
 - **Startup phase markers**: The `[1/5]..[5/5]` journal markers in phase 3c depend on kwaainet's logging format. If the format changes, these checks will SKIP rather than FAIL.

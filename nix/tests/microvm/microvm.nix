@@ -61,6 +61,7 @@ let
       services ? [ ],
       httpChecks ? [ ],
       # Two-node specific
+      macAddress ? "52:54:00:12:34:56",
       initialPeers ? [ ],
       vmIp ? null,
       tapDevice ? null,
@@ -198,7 +199,7 @@ let
                       {
                         type = "tap";
                         id = tapDevice;
-                        mac = "52:54:00:12:34:56";
+                        mac = macAddress;
                       }
                     ]
                   else
@@ -206,7 +207,7 @@ let
                       {
                         type = "user";
                         id = "eth0";
-                        mac = "52:54:00:12:34:56";
+                        mac = macAddress;
                       }
                     ];
 
@@ -400,6 +401,7 @@ let
       networking = "tap";
       services = [ "kwaainet" ];
       httpChecks = [ ];
+      macAddress = "52:54:00:12:34:0a";
       vmIp = constants.network.vmA;
       tapDevice = constants.network.tapA;
       initialPeers = [ ];
@@ -407,10 +409,11 @@ let
     vmB = mkMicrovm {
       inherit arch;
       variant = "two-node-b";
-      portOffset = 0;
+      portOffset = 600;
       networking = "tap";
       services = [ "kwaainet" ];
       httpChecks = [ ];
+      macAddress = "52:54:00:12:34:0b";
       vmIp = constants.network.vmB;
       tapDevice = constants.network.tapB;
       initialPeers = [ ];
@@ -435,6 +438,7 @@ let
           expect = 200;
         }
       ];
+      macAddress = "52:54:00:12:34:0a";
       vmIp = constants.network.vmA;
       tapDevice = constants.network.tapA;
       initialPeers = [ ];
@@ -442,10 +446,11 @@ let
     vmB = mkMicrovm {
       inherit arch;
       variant = "two-node-services-b";
-      portOffset = 100;
+      portOffset = 700;
       networking = "tap";
       services = [ "kwaainet" ];
       httpChecks = [ ];
+      macAddress = "52:54:00:12:34:0b";
       vmIp = constants.network.vmB;
       tapDevice = constants.network.tapB;
       initialPeers = [ ];

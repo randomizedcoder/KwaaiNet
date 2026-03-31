@@ -117,7 +117,7 @@ in
           ip link del "$tap"
         fi
         echo "Creating TAP device $tap for user $REAL_USER..."
-        ip tuntap add dev "$tap" mode tap user "$REAL_USER"
+        ip tuntap add dev "$tap" mode tap user "$REAL_USER" multi_queue
         ip link set "$tap" master ${bridge}
         ip link set "$tap" up
       done
@@ -138,6 +138,15 @@ in
 
       # IPv6 forwarding
       sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null
+
+      # Prevent br_netfilter from sending bridged L2 frames through
+      # iptables/nftables — without this, inter-VM traffic on the bridge
+      # gets dropped by host firewall rules.
+      if [[ -d /proc/sys/net/bridge ]]; then
+        sysctl -w net.bridge.bridge-nf-call-iptables=0 >/dev/null 2>&1 || true
+        sysctl -w net.bridge.bridge-nf-call-ip6tables=0 >/dev/null 2>&1 || true
+        echo "Disabled bridge-nf-call (L2 bypass for bridged traffic)"
+      fi
 
       # NAT via nftables
       echo "Configuring NAT..."
