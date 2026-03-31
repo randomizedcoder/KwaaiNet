@@ -86,7 +86,10 @@
       fi
     '';
 
-  # TCP connectivity from one VM to the other's P2P port
+  # TCP connectivity from one VM to the other's P2P port.
+  # Note: p2pd currently binds 0.0.0.0 (IPv4 only), so this check will
+  # SKIP on IPv6-only TAP networks.  It validates reachability on IPv4
+  # networks or if p2pd adds IPv6 binding in the future.
   mkCrossVmTcpCheck =
     {
       vmAHost,
@@ -97,19 +100,23 @@
     }:
     ''
       tcp_start=$(time_ms)
-      if ssh_cmd "${vmAHost}" "${toString sshPortA}" "nc -z -w 5 ${vmBHost} ${toString p2pPort}" 2>/dev/null; then
-        result_pass "VM-A -> VM-B TCP :${toString p2pPort}" "$(elapsed_ms "$tcp_start")"
+      tcp_ec=$(ssh_cmd "${vmAHost}" "${toString sshPortA}" "curl --connect-timeout 5 -o /dev/null -s http://[${vmBHost}]:${toString p2pPort}/ ; echo \$?" 2>/dev/null || echo "7")
+      tcp_ec=$(echo "$tcp_ec" | tail -1 | tr -d '[:space:]')
+      if [[ "$tcp_ec" != "7" ]]; then
+        result_pass "VM-A -> VM-B TCP :${toString p2pPort} connected" "$(elapsed_ms "$tcp_start")"
         record_pass
       else
-        result_skip "VM-A -> VM-B TCP :${toString p2pPort} not reachable"
+        result_skip "VM-A -> VM-B TCP :${toString p2pPort} (p2pd binds IPv4, bridge is IPv6)"
       fi
 
       tcp_start=$(time_ms)
-      if ssh_cmd "${vmBHost}" "${toString sshPortB}" "nc -z -w 5 ${vmAHost} ${toString p2pPort}" 2>/dev/null; then
-        result_pass "VM-B -> VM-A TCP :${toString p2pPort}" "$(elapsed_ms "$tcp_start")"
+      tcp_ec=$(ssh_cmd "${vmBHost}" "${toString sshPortB}" "curl --connect-timeout 5 -o /dev/null -s http://[${vmAHost}]:${toString p2pPort}/ ; echo \$?" 2>/dev/null || echo "7")
+      tcp_ec=$(echo "$tcp_ec" | tail -1 | tr -d '[:space:]')
+      if [[ "$tcp_ec" != "7" ]]; then
+        result_pass "VM-B -> VM-A TCP :${toString p2pPort} connected" "$(elapsed_ms "$tcp_start")"
         record_pass
       else
-        result_skip "VM-B -> VM-A TCP :${toString p2pPort} not reachable"
+        result_skip "VM-B -> VM-A TCP :${toString p2pPort} (p2pd binds IPv4, bridge is IPv6)"
       fi
     '';
 

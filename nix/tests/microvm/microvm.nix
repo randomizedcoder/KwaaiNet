@@ -296,6 +296,7 @@ let
               services.kwaainet = lib.mkIf hasKwaainet {
                 enable = true;
                 package = kwaainetForArch;
+                openFirewall = useTap; # TAP VMs need P2P port open for cross-VM traffic
                 settings = {
                   port = constants.defaults.kwaainetPort;
                   use_gpu = false;
