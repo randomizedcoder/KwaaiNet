@@ -519,15 +519,21 @@ let
         ${lib.optionalString includeStartupSequence ''
           # ─── Phase 3b: VM-A Startup Sequence ──────────────────────
           phase_header "3b" "VM-A Startup Sequence" "${toString archTimeouts.startupSequence}"
-          for phase_num in 1 2 3 4 5; do
-            seq_start=$(time_ms)
-            if wait_for_journal_entry "$SSH_HOST_A" "$SSH_PORT" "kwaainet" "\[$phase_num/5\]" ${toString archTimeouts.startupSequence}; then
-              result_pass "VM-A startup phase [$phase_num/5]" "$(elapsed_ms "$seq_start")"
-              record_pass
-            else
-              result_skip "VM-A startup phase [$phase_num/5] not found"
-            fi
-          done
+          ${lib.concatImapStringsSep "\n" (
+            i: desc:
+            let
+              n = toString i;
+            in
+            ''
+              seq_start=$(time_ms)
+              if wait_for_journal_entry "$SSH_HOST_A" "$SSH_PORT" "kwaainet" "\[${n}/5\]" ${toString archTimeouts.startupSequence}; then
+                result_pass "VM-A startup [${n}/5] ${desc}" "$(elapsed_ms "$seq_start")"
+                record_pass
+              else
+                result_skip "VM-A startup [${n}/5] ${desc} — not found"
+              fi
+            ''
+          ) deepChecks.startupPhaseNames}
         ''}
 
         # ─── Phase 4a: Start VM-B ──────────────────────────────────

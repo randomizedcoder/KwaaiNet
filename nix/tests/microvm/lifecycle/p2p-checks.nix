@@ -117,27 +117,31 @@
   mkDualStartupPhaseCheck =
     {
       phase,
+      desc ? "",
       vmAHost,
       vmBHost,
       sshPortA ? 22,
       sshPortB ? 22,
       timeout ? 30,
     }:
+    let
+      label = if desc != "" then " ${desc}" else "";
+    in
     ''
       phase_start=$(time_ms)
       if wait_for_journal_entry "${vmAHost}" "${toString sshPortA}" "kwaainet" "\[${toString phase}/5\]" ${toString timeout}; then
-        result_pass "VM-A startup phase [${toString phase}/5]" "$(elapsed_ms "$phase_start")"
+        result_pass "VM-A startup [${toString phase}/5]${label}" "$(elapsed_ms "$phase_start")"
         record_pass
       else
-        result_skip "VM-A startup phase [${toString phase}/5] not found"
+        result_skip "VM-A startup [${toString phase}/5]${label} — not found"
       fi
 
       phase_start=$(time_ms)
       if wait_for_journal_entry "${vmBHost}" "${toString sshPortB}" "kwaainet" "\[${toString phase}/5\]" ${toString timeout}; then
-        result_pass "VM-B startup phase [${toString phase}/5]" "$(elapsed_ms "$phase_start")"
+        result_pass "VM-B startup [${toString phase}/5]${label}" "$(elapsed_ms "$phase_start")"
         record_pass
       else
-        result_skip "VM-B startup phase [${toString phase}/5] not found"
+        result_skip "VM-B startup [${toString phase}/5]${label} — not found"
       fi
     '';
 

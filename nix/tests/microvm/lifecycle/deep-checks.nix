@@ -3,19 +3,37 @@
 # socket, database, and dependency verification.
 #
 { lib }:
+let
+  # Descriptions match core/crates/kwaai-cli/src/node.rs log lines.
+  startupPhaseNames = [
+    "Starting p2p daemon"
+    "Initialising DHT storage"
+    "Registering Hivemind RPC handlers"
+    "Bootstrapping"
+    "Announcing to DHT"
+  ];
+in
 {
+  # Exposed so two-node tests (default.nix) can use the same names.
+  inherit startupPhaseNames;
+
   # Grep journalctl for startup phase markers [1/5]..[5/5]
-  mkStartupSequenceChecks = ''
-    for phase_num in 1 2 3 4 5; do
-      seq_start=$(time_ms)
-      if wait_for_journal_entry "$SSH_HOST" "$SSH_PORT" "kwaainet" "\[$phase_num/5\]" 30; then
-        result_pass "startup phase [$phase_num/5]" "$(elapsed_ms "$seq_start")"
-        record_pass
-      else
-        result_skip "startup phase [$phase_num/5] not found in journal"
-      fi
-    done
-  '';
+  mkStartupSequenceChecks =
+    lib.concatImapStringsSep "\n" (
+      i: desc:
+      let
+        n = toString i;
+      in
+      ''
+        seq_start=$(time_ms)
+        if wait_for_journal_entry "$SSH_HOST" "$SSH_PORT" "kwaainet" "\[${n}/5\]" 30; then
+          result_pass "startup phase [${n}/5] ${desc}" "$(elapsed_ms "$seq_start")"
+          record_pass
+        else
+          result_skip "startup phase [${n}/5] ${desc} — not found in journal"
+        fi
+      ''
+    ) startupPhaseNames;
 
   # Verify kwaainet status output contains meaningful content
   mkStatusDeepCheck = ''
