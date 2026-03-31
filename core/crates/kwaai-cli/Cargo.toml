@@ -82,4 +82,5 @@ nix = { version = "0.27", features = ["signal", "process", "fs"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 kwaai-inference = { workspace = true, features = ["metal"] }
 
-
+[dev-dependencies]
+tempfile = "3"

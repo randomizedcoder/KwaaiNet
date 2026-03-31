@@ -429,7 +429,28 @@ impl KwaaiNetConfig {
         (self.start_block + self.blocks).min(total)
     }
 
-    /// Set a top-level key by name (string value coerced to the right type).
+    /// Set a top-level config key by name.
+    ///
+    /// The string `value` is coerced to the field's type.  Valid keys:
+    ///
+    /// | Key | Type | Example |
+    /// |-----|------|---------|
+    /// | `model` | String | `"unsloth/Llama-3-8B"` |
+    /// | `blocks` | u32 | `"8"` |
+    /// | `port` | u16 | `"8080"` |
+    /// | `start_block` | u32 | `"0"` |
+    /// | `use_gpu` | bool | `"true"`, `"1"`, `"yes"` |
+    /// | `log_level` | String | `"info"` |
+    /// | `public_name` | String | `"my-node"` |
+    /// | `public_ip` | String | `"1.2.3.4"` |
+    /// | `announce_addr` | String | `"/ip4/1.2.3.4/tcp/8080"` |
+    /// | `no_relay` | bool | `"false"` |
+    /// | `auto_rebalance` | bool | `"true"` |
+    /// | `rebalance_interval_secs` | u64 | `"60"` |
+    /// | `rebalance_min_redundancy` | usize | `"2"` |
+    /// | `initial_peers` | comma-list | `"/ip6/…/p2p/Qm1, /ip6/…/p2p/Qm2"` |
+    ///
+    /// Saves to disk after each update.
     pub fn set_key(&mut self, key: &str, value: &str) -> Result<()> {
         match key {
             "model" => self.model = value.to_string(),
@@ -456,6 +477,13 @@ impl KwaaiNetConfig {
                 self.rebalance_min_redundancy = value.parse().map_err(|_| {
                     anyhow::anyhow!("rebalance_min_redundancy must be a positive integer")
                 })?
+            }
+            "initial_peers" => {
+                self.initial_peers = if value.is_empty() {
+                    vec![]
+                } else {
+                    value.split(',').map(|s| s.trim().to_string()).collect()
+                };
             }
             _ => anyhow::bail!(
                 "Unknown config key '{}'. Run `kwaainet config set --help` to see valid keys.",
@@ -507,6 +535,10 @@ mod dirs_sys {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// Serialise tests that mutate the process-wide HOME env var.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn cfg(start: u32, blocks: u32, total_hint: &str) -> KwaaiNetConfig {
         KwaaiNetConfig {
@@ -515,6 +547,21 @@ mod tests {
             blocks,
             ..KwaaiNetConfig::default()
         }
+    }
+
+    /// Create an isolated config for testing set_key().
+    /// Returns (MutexGuard, TempDir, KwaaiNetConfig) — keep all alive for the
+    /// test duration.  The guard serialises access to HOME.
+    fn setup_config() -> (std::sync::MutexGuard<'static, ()>, tempfile::TempDir, KwaaiNetConfig) {
+        let guard = ENV_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", dir.path());
+        let cfg_dir = dir.path().join(".kwaainet");
+        std::fs::create_dir_all(&cfg_dir).unwrap();
+        let c = KwaaiNetConfig::default();
+        let cfg_file = cfg_dir.join("config.yaml");
+        std::fs::write(&cfg_file, serde_yaml::to_string(&c).unwrap()).unwrap();
+        (guard, dir, c)
     }
 
     #[test]
@@ -543,5 +590,141 @@ mod tests {
         // 70B has 80 blocks; 72 + 32 = 104 → clamped to 80
         let c = cfg(72, 32, "meta/Llama-2-70B");
         assert_eq!(c.effective_end_block(), 80);
+    }
+
+    #[test]
+    fn set_key_initial_peers_comma_separated() {
+        let (_guard, _dir, mut c) = setup_config();
+        c.set_key(
+            "initial_peers",
+            "/ip6/fd00::a/tcp/8080/p2p/QmA, /ip6/fd00::b/tcp/8080/p2p/QmB",
+        )
+        .unwrap();
+        assert_eq!(
+            c.initial_peers,
+            vec![
+                "/ip6/fd00::a/tcp/8080/p2p/QmA",
+                "/ip6/fd00::b/tcp/8080/p2p/QmB",
+            ]
+        );
+    }
+
+    #[test]
+    fn set_key_initial_peers_empty_clears() {
+        let (_guard, _dir, mut c) = setup_config();
+        c.set_key("initial_peers", "").unwrap();
+        assert!(c.initial_peers.is_empty());
+    }
+
+    #[test]
+    fn set_key_initial_peers_single() {
+        let (_guard, _dir, mut c) = setup_config();
+        c.set_key("initial_peers", "/ip6/fd00::a/tcp/8080/p2p/QmA")
+            .unwrap();
+        assert_eq!(c.initial_peers, vec!["/ip6/fd00::a/tcp/8080/p2p/QmA"]);
+    }
+
+    #[test]
+    fn set_key_string_values() {
+        let (_guard, _dir, mut c) = setup_config();
+
+        c.set_key("model", "meta/Llama-3-70B").unwrap();
+        assert_eq!(c.model, "meta/Llama-3-70B");
+
+        c.set_key("log_level", "debug").unwrap();
+        assert_eq!(c.log_level, "debug");
+
+        c.set_key("public_name", "my-node").unwrap();
+        assert_eq!(c.public_name.as_deref(), Some("my-node"));
+
+        c.set_key("public_ip", "1.2.3.4").unwrap();
+        assert_eq!(c.public_ip.as_deref(), Some("1.2.3.4"));
+
+        c.set_key("announce_addr", "/ip4/1.2.3.4/tcp/8080").unwrap();
+        assert_eq!(
+            c.announce_addr.as_deref(),
+            Some("/ip4/1.2.3.4/tcp/8080")
+        );
+    }
+
+    #[test]
+    fn set_key_numeric_values() {
+        let (_guard, _dir, mut c) = setup_config();
+
+        c.set_key("blocks", "16").unwrap();
+        assert_eq!(c.blocks, 16);
+
+        c.set_key("port", "9090").unwrap();
+        assert_eq!(c.port, 9090);
+
+        c.set_key("start_block", "4").unwrap();
+        assert_eq!(c.start_block, 4);
+
+        c.set_key("rebalance_interval_secs", "120").unwrap();
+        assert_eq!(c.rebalance_interval_secs, 120);
+
+        c.set_key("rebalance_min_redundancy", "3").unwrap();
+        assert_eq!(c.rebalance_min_redundancy, 3);
+    }
+
+    #[test]
+    fn set_key_boolean_values() {
+        let (_guard, _dir, mut c) = setup_config();
+
+        // Test all true representations
+        for val in ["true", "1", "yes"] {
+            c.set_key("use_gpu", val).unwrap();
+            assert!(c.use_gpu, "use_gpu should be true for '{val}'");
+        }
+        // Test all false representations
+        for val in ["false", "0", "no"] {
+            c.set_key("use_gpu", val).unwrap();
+            assert!(!c.use_gpu, "use_gpu should be false for '{val}'");
+        }
+        // Verify other bool keys accept the same values
+        c.set_key("no_relay", "true").unwrap();
+        assert!(c.no_relay);
+        c.set_key("no_relay", "false").unwrap();
+        assert!(!c.no_relay);
+
+        c.set_key("auto_rebalance", "yes").unwrap();
+        assert!(c.auto_rebalance);
+        c.set_key("auto_rebalance", "no").unwrap();
+        assert!(!c.auto_rebalance);
+    }
+
+    #[test]
+    fn set_key_numeric_rejects_non_numeric() {
+        let (_guard, _dir, mut c) = setup_config();
+        for key in [
+            "blocks",
+            "port",
+            "start_block",
+            "rebalance_interval_secs",
+            "rebalance_min_redundancy",
+        ] {
+            assert!(
+                c.set_key(key, "not-a-number").is_err(),
+                "{key} should reject non-numeric"
+            );
+        }
+    }
+
+    #[test]
+    fn set_key_boolean_rejects_invalid() {
+        let (_guard, _dir, mut c) = setup_config();
+        for key in ["use_gpu", "no_relay", "auto_rebalance"] {
+            assert!(
+                c.set_key(key, "maybe").is_err(),
+                "{key} should reject 'maybe'"
+            );
+        }
+    }
+
+    #[test]
+    fn set_key_unknown_key_fails() {
+        let (_guard, _dir, mut c) = setup_config();
+        let err = c.set_key("nonexistent", "value").unwrap_err();
+        assert!(err.to_string().contains("Unknown config key"));
     }
 }
