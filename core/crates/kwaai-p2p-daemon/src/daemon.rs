@@ -78,7 +78,7 @@ impl DaemonBuilder {
     }
 
     /// Set the host multiaddrs p2pd listens on for P2P traffic
-    /// e.g. ["/ip4/0.0.0.0/tcp/8080"]
+    /// e.g. ["/ip4/0.0.0.0/tcp/8080", "/ip6/::/tcp/8080"]
     pub fn host_addrs<I, S>(mut self, addrs: I) -> Self
     where
         I: IntoIterator<Item = S>,

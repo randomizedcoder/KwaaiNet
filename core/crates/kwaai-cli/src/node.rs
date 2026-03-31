@@ -341,8 +341,9 @@ pub async fn run_node(config: &KwaaiNetConfig) -> Result<()> {
         eprintln!("  ⚠️  p2pd not found — run `kwaainet setup --get-deps` to install it");
     }
 
-    // p2pd listens for P2P traffic on the configured port
-    let host_addr = format!("/ip4/0.0.0.0/tcp/{}", config.port);
+    // p2pd listens for P2P traffic on the configured port (dual-stack)
+    let host_addr_v4 = format!("/ip4/0.0.0.0/tcp/{}", config.port);
+    let host_addr_v6 = format!("/ip6/::/tcp/{}", config.port);
 
     // Announce the public IP so the health monitor can reach us
     let announce_addr = config
@@ -358,7 +359,7 @@ pub async fn run_node(config: &KwaaiNetConfig) -> Result<()> {
         .auto_relay(true)
         .auto_nat(true)
         .nat_portmap(true)
-        .host_addrs([host_addr])
+        .host_addrs([host_addr_v4, host_addr_v6])
         .bootstrap_peers(bootstrap_peers.clone())
         .with_identity_key(&identity_key_path);
 
