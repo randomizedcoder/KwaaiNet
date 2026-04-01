@@ -88,9 +88,16 @@ in
 
       serviceConfig = hardening // {
         Type = "simple";
-        DynamicUser = true;
+        # Static user must match the PostgreSQL role so peer auth works
+        # over the Unix socket (DynamicUser would create a transient name
+        # like "kwaainet-summit-server" that has no matching PG role).
+        User = "summit";
+        Group = "summit";
         ExecStart = "${cfg.package}/bin/summit-server";
+        Restart = "on-failure";
+        RestartSec = 3;
         TimeoutStopSec = 10;
+        StateDirectory = "summit";
 
         RestrictAddressFamilies = [
           "AF_INET"
@@ -107,6 +114,14 @@ in
         SocketBindDeny = "any";
       };
     };
+
+    # Static system user matching the PostgreSQL role name
+    users.users.summit = {
+      isSystemUser = true;
+      group = "summit";
+      home = "/var/lib/summit";
+    };
+    users.groups.summit = { };
 
     networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [
       (modLib.portFromBindAddr cfg.settings.BIND_ADDR)
