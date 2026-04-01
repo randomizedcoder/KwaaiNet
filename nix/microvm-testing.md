@@ -73,12 +73,12 @@ nix run .#kwaainet-lifecycle-test-all -- --arch=aarch64
 # Boot a VM interactively for exploration
 nix run .#kwaainet-microvm-x86_64-single-node
 # Then SSH in from another terminal:
-sshpass -p kwaainet ssh -o StrictHostKeyChecking=no -p 2222 root@127.0.0.1
+sshpass -p kwaainet ssh -o StrictHostKeyChecking=no -p 15522 root@127.0.0.1
 
 # Boot an aarch64 VM (uses cross-compiled kwaainet binary)
 nix run .#kwaainet-microvm-aarch64-single-node
 # SSH on aarch64 port range:
-sshpass -p kwaainet ssh -o StrictHostKeyChecking=no -p 3222 root@127.0.0.1
+sshpass -p kwaainet ssh -o StrictHostKeyChecking=no -p 15622 root@127.0.0.1
 ```
 
 ---
@@ -149,9 +149,9 @@ Each architecture gets its own port range to allow concurrent VMs:
 
 | Arch | Console ports | SSH base | Description |
 |------|--------------|----------|-------------|
-| x86_64 | 7000-7999 | 2222 | KVM accelerated |
-| aarch64 | 8000-8999 | 3222 | QEMU TCG emulated |
-| riscv64 | 9000-9999 | 4222 | QEMU TCG emulated |
+| x86_64 | 15500+ | 15522 | KVM accelerated |
+| aarch64 | 15600+ | 15622 | QEMU TCG emulated |
+| riscv64 | 15700+ | 15722 | QEMU TCG emulated |
 
 Within each range, the variant's `portOffset` determines exact ports.
 
@@ -187,7 +187,7 @@ Six variants exercise different aspects of KwaaiNet. Each uses either
 | `two-node` | kwaainet x2 | TAP/bridge | 1 GB x2 | P2P peer discovery over real IPv6 |
 | `two-node-services` | kwaainet + map-server (VM-A), kwaainet (VM-B) | TAP/bridge | 1 GB x2 | P2P discovery + map-server observes both nodes |
 | `map-server` | kwaainet, map-server | user-mode | 1 GB | HTTP endpoints, response body validation |
-| `full-stack` | kwaainet, map-server, summit-server, PostgreSQL | user-mode | 1 GB | Multi-service dependencies, database, dependency failure recovery |
+| `full-stack` | kwaainet, map-server | user-mode | 1 GB | Multi-service lifecycle, deep validation (summit-server + PostgreSQL added once summit-server is in workspace) |
 | `docker` | Docker daemon + OCI images | user-mode | 2 GB | Container load/run inside a VM |
 | `k8s` | Docker + minikube + kubectl | user-mode | 4 GB | K8s manifest deployment, pod readiness |
 
@@ -195,15 +195,15 @@ Six variants exercise different aspects of KwaaiNet. Each uses either
 
 | Variant | Port offset | SSH port | Serial port | Virtio port |
 |---------|-------------|----------|-------------|-------------|
-| single-node | 0 | 2222 | 7001 | 7002 |
-| two-node VM-A | 0 | — (TAP) | 7001 | 7002 |
-| two-node VM-B | 600 | — (TAP) | 7013 | 7014 |
-| two-node-services VM-A | 100 | — (TAP) | 7003 | 7004 |
-| two-node-services VM-B | 700 | — (TAP) | 7015 | 7016 |
-| map-server | 200 | 2224 | 7005 | 7006 |
-| full-stack | 300 | 2225 | 7007 | 7008 |
-| docker | 400 | 2226 | 7009 | 7010 |
-| k8s | 500 | 2227 | 7011 | 7012 |
+| single-node | 0 | 15522 | 15501 | 15502 |
+| two-node VM-A | 0 | — (TAP) | 15501 | 15502 |
+| two-node VM-B | 600 | — (TAP) | 15513 | 15514 |
+| two-node-services VM-A | 100 | — (TAP) | 15503 | 15504 |
+| two-node-services VM-B | 700 | — (TAP) | 15515 | 15516 |
+| map-server | 200 | 15524 | 15505 | 15506 |
+| full-stack | 300 | 15525 | 15507 | 15508 |
+| docker | 400 | 15526 | 15509 | 15510 |
+| k8s | 500 | 15527 | 15511 | 15512 |
 
 Two-node VMs use different port offsets so their serial/virtio console TCP
 ports don't collide. Each VM also gets a unique MAC address on the bridge.
@@ -234,7 +234,7 @@ skipped when not applicable.
 | 4 | Node Verify | `kwaainet identity show` returns Peer ID | kwaainet variants | 30s |
 | 4a | Deep Node Validation | `kwaainet status` output, p2pd socket, identity key | kwaainet variants | 30s |
 | 4b | HTTP Checks | `curl /health` on map-server:3030, summit:3000 | map-server, full-stack | 30s |
-| 4c | Port Ownership | `ss -tlnp` confirms correct process owns port 8080 | kwaainet variants | 30s |
+| 4c | Port Ownership | `ss -tlnp` confirms correct process owns P2P port | kwaainet variants | 30s |
 | 4d-map | Deep Map Server | `/api/stats` has `node_count`, `/api/nodes` returns array | map-server, full-stack | 30s |
 | 4d | Docker Checks | `docker load` + `docker run` OCI images | docker | 120s |
 | 4e | K8s Checks | minikube start + `kubectl apply` + pod ready | k8s | 300s |
@@ -284,7 +284,7 @@ Bootstrap peers are injected at runtime rather than at NixOS build time:
 
 1. VM-B starts with `initial_peers = []` (no bootstrap peers in NixOS config)
 2. After both VMs are running, the test extracts VM-A's Peer ID
-3. Constructs a multiaddr: `/ip6/fd00:c0aa:1::a/tcp/8080/p2p/<peer-id>`
+3. Constructs a multiaddr: `/ip6/fd00:c0aa:1::a/tcp/15580/p2p/<peer-id>`
 4. SSH into VM-B: `kwaainet config set initial_peers "<multiaddr>"`
 5. `systemctl restart kwaainet` — the restarted CLI reads from `config.yaml`
 
@@ -318,7 +318,7 @@ The main P2P inference node.
 |--------|------|---------|-------------|
 | `enable` | bool | false | Enable the service |
 | `package` | package | from specialArgs | kwaainet binary (includes bundled p2pd) |
-| `settings.port` | port | 8080 | P2P listen port |
+| `settings.port` | port | 15580 | P2P listen port (tests; production default is 8080) |
 | `settings.blocks` | int | 8 | Number of model blocks to serve |
 | `settings.start_block` | int | 0 | Starting block index |
 | `settings.public_name` | str | "" | Public node name |
@@ -652,7 +652,7 @@ All expanded lifecycle phases validated at runtime on x86_64 (KVM):
 - Clean two-phase shutdown (SSH reboot → SIGTERM fallback)
 
 **Expected SKIPs in two-node variants:**
-- TCP :8080 reachability — NixOS firewall blocks external TCP by default; P2P uses its own protocol layer
+- TCP P2P port reachability — NixOS firewall blocks external TCP by default; P2P uses its own protocol layer
 - Map-server node discovery — the crawl interval may not complete within the test window; the map-server API endpoints are validated separately
 
 #### Cross-architecture note

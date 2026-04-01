@@ -15,6 +15,7 @@
         cross-containers cross-containers-aarch64-gnu cross-containers-aarch64-musl cross-containers-x86_64-musl cross-containers-riscv64-gnu \
         check test test-containers test-cross \
         test-lifecycle-all test-lifecycle-all-x86_64 test-lifecycle-all-aarch64 test-lifecycle-all-riscv64 \
+        test-everything \
         network-setup network-teardown k8s-manifests \
         fmt develop clean
 
@@ -131,6 +132,43 @@ test-lifecycle-all-aarch64:
 
 test-lifecycle-all-riscv64:
 	nix run .#kwaainet-lifecycle-test-all -- --arch=riscv64
+
+# --- Run all tests in series ---
+# Runs: flake check → two-node → containers → cross smoke → lifecycle (all x86_64)
+# Handles TAP network setup/teardown automatically (requires sudo).
+
+test-everything:
+	@echo "══════════════════════════════════════"
+	@echo "  KwaaiNet — Full Test Suite"
+	@echo "══════════════════════════════════════"
+	@echo ""
+	@echo "▸ [1/6] nix flake check (clippy + cargo test + smoke)"
+	nix flake check
+	@echo ""
+	@echo "▸ [2/6] Two-node localhost integration"
+	nix run .#test-two-node
+	@echo ""
+	@echo "▸ [3/6] OCI container validation"
+	nix run .#test-containers
+	@echo ""
+	@echo "▸ [4/6] Cross-compilation smoke tests"
+	nix build .#test-cross-smoke-aarch64-linux-gnu -o result-test-cross-aarch64-gnu
+	nix build .#test-cross-smoke-aarch64-linux-musl -o result-test-cross-aarch64-musl
+	nix build .#test-cross-smoke-x86_64-linux-musl -o result-test-cross-x86_64-musl
+	nix build .#test-cross-smoke-riscv64-linux-gnu -o result-test-cross-riscv64-gnu
+	@echo ""
+	@echo "▸ [5/6] TAP network setup (sudo)"
+	sudo nix run .#kwaainet-network-setup
+	@echo ""
+	@echo "▸ [6/6] MicroVM lifecycle tests (x86_64, all 7 variants)"
+	nix run .#kwaainet-lifecycle-test-all -- --arch=x86_64
+	@echo ""
+	@echo "▸ Teardown TAP network"
+	sudo nix run .#kwaainet-network-teardown
+	@echo ""
+	@echo "══════════════════════════════════════"
+	@echo "  All tests passed!"
+	@echo "══════════════════════════════════════"
 
 network-setup:
 	sudo nix run .#kwaainet-network-setup

@@ -15,9 +15,9 @@ rec {
   defaults = {
     ram = 1024;
     vcpus = 2;
-    sshPort = 2222;
+    sshPort = 15522;
     sshPassword = "kwaainet";
-    kwaainetPort = 8080;
+    kwaainetPort = 15580;
   };
 
   # ─── Architecture definitions ──────────────────────────────────────────
@@ -96,11 +96,10 @@ rec {
     full-stack = {
       portOffset = 300;
       networking = "user";
+      # summit-server + postgresql added once summit-server is in the Cargo workspace
       services = [
         "kwaainet"
         "kwaainet-map-server"
-        "kwaainet-summit-server"
-        "postgresql"
       ];
       httpChecks = [
         {
@@ -108,17 +107,12 @@ rec {
           port = 3030;
           expect = 200;
         }
-        {
-          path = "/health";
-          port = 3000;
-          expect = 200;
-        }
       ];
     };
     docker = {
       portOffset = 400;
       networking = "user";
-      ram = 2048;
+      ram = 2047; # not 2048 — QEMU hangs at exactly 2GB (microvm.nix #171)
       services = [ "docker" ];
       httpChecks = [ ];
     };
@@ -208,11 +202,15 @@ rec {
       timeoutsQemu;
 
   # ─── Port allocation ───────────────────────────────────────────────────
-  # x86_64: 7000-7999, aarch64: 8000-8999, riscv64: 9000-9999
+  # All test ports live in the 155xx–157xx range to avoid conflicts with
+  # common services (SSH 22, HTTP 8080, dev servers, etc.).
+  #
+  # Console ports: x86_64 15500+, aarch64 15600+, riscv64 15700+
+  # SSH ports:     x86_64 15522+, aarch64 15622+, riscv64 15722+
   archPortBase = {
-    x86_64 = 7000;
-    aarch64 = 8000;
-    riscv64 = 9000;
+    x86_64 = 15500;
+    aarch64 = 15600;
+    riscv64 = 15700;
   };
 
   consolePorts =
@@ -230,9 +228,9 @@ rec {
     arch: portOffset:
     let
       archSshBase = {
-        x86_64 = 2222;
-        aarch64 = 3222;
-        riscv64 = 4222;
+        x86_64 = 15522;
+        aarch64 = 15622;
+        riscv64 = 15722;
       };
     in
     archSshBase.${arch} + (portOffset / 100);

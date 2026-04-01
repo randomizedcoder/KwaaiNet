@@ -270,7 +270,7 @@ let
           # ─── Phase 4c: Port Ownership ────────────────────────────────
           phase_header "4c" "Port Ownership" "${toString archTimeouts.deepValidation}"
           ${deepChecks.mkPortOwnerCheck {
-            port = 8080;
+            port = constants.defaults.kwaainetPort;
             expectedProcess = "kwaainet";
           }}
         ''}
@@ -614,7 +614,7 @@ let
         phase_header "8" "Bootstrap Peer Injection" "${toString archTimeouts.p2pBootstrap}"
         start_time=$(time_ms)
         if [[ -n "$PEER_ID_A" ]]; then
-          MULTIADDR=$(build_multiaddr "${vmAHost}" "8080" "$PEER_ID_A")
+          MULTIADDR=$(build_multiaddr "${vmAHost}" "${toString constants.defaults.kwaainetPort}" "$PEER_ID_A")
           info "  Injecting: $MULTIADDR"
           inject_bootstrap_peer "$SSH_HOST_B" "$SSH_PORT" "$MULTIADDR"
           result_pass "Bootstrap peer injected into VM-B" "$(elapsed_ms "$start_time")"

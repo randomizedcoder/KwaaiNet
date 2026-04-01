@@ -66,7 +66,7 @@
       vmBHost,
       sshPortA ? 22,
       sshPortB ? 22,
-      p2pPort ? 8080,
+      p2pPort ? 15580,
     }:
     ''
       port_start=$(time_ms)
@@ -96,7 +96,7 @@
       vmBHost,
       sshPortA ? 22,
       sshPortB ? 22,
-      p2pPort ? 8080,
+      p2pPort ? 15580,
     }:
     ''
       tcp_start=$(time_ms)
