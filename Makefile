@@ -158,13 +158,20 @@ test-everything:
 	nix build .#test-cross-smoke-riscv64-linux-gnu -o result-test-cross-riscv64-gnu
 	@echo ""
 	@echo "▸ [5/6] TAP network setup (sudo)"
-	sudo nix run .#kwaainet-network-setup
+	@if ip link show kwaaibr0 >/dev/null 2>&1; then \
+		echo "  TAP network already up — skipping setup"; \
+	else \
+		sudo nix run .#kwaainet-network-setup; \
+	fi
 	@echo ""
-	@echo "▸ [6/6] MicroVM lifecycle tests (x86_64, all 7 variants)"
+	@echo "▸ [6/6] MicroVM lifecycle tests (x86_64, all 8 variants)"
 	nix run .#kwaainet-lifecycle-test-all -- --arch=x86_64
 	@echo ""
 	@echo "▸ Teardown TAP network"
-	sudo nix run .#kwaainet-network-teardown
+	@if ip link show kwaaibr0 >/dev/null 2>&1; then \
+		sudo -n nix run .#kwaainet-network-teardown 2>/dev/null || \
+		echo "  WARN: sudo expired — run manually: sudo nix run .#kwaainet-network-teardown"; \
+	fi
 	@echo ""
 	@echo "══════════════════════════════════════"
 	@echo "  All tests passed!"

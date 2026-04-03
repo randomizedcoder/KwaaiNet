@@ -458,6 +458,119 @@ let
     };
   };
 
+  # Four-node with services: VM-A has kwaainet + map-server, B/C/D have kwaainet only
+  mkFourNodeServicesVMs = arch: {
+    vmA = mkMicrovm {
+      inherit arch;
+      variant = "four-node-services-a";
+      portOffset = 100;
+      networking = "tap";
+      services = [
+        "kwaainet"
+        "kwaainet-map-server"
+      ];
+      httpChecks = [
+        {
+          path = "/health";
+          port = 3030;
+          expect = 200;
+        }
+      ];
+      macAddress = "52:54:00:12:34:0a";
+      vmIp = constants.network.vmA;
+      tapDevice = constants.network.tapA;
+      initialPeers = [ ];
+    };
+    vmB = mkMicrovm {
+      inherit arch;
+      variant = "four-node-services-b";
+      portOffset = 800;
+      networking = "tap";
+      services = [ "kwaainet" ];
+      httpChecks = [ ];
+      macAddress = "52:54:00:12:34:0b";
+      vmIp = constants.network.vmB;
+      tapDevice = constants.network.tapB;
+      initialPeers = [ ];
+    };
+    vmC = mkMicrovm {
+      inherit arch;
+      variant = "four-node-services-c";
+      portOffset = 1400;
+      networking = "tap";
+      services = [ "kwaainet" ];
+      httpChecks = [ ];
+      macAddress = "52:54:00:12:34:0c";
+      vmIp = constants.network.vmC;
+      tapDevice = constants.network.tapC;
+      initialPeers = [ ];
+    };
+    vmD = mkMicrovm {
+      inherit arch;
+      variant = "four-node-services-d";
+      portOffset = 2000;
+      networking = "tap";
+      services = [ "kwaainet" ];
+      httpChecks = [ ];
+      macAddress = "52:54:00:12:34:0d";
+      vmIp = constants.network.vmD;
+      tapDevice = constants.network.tapD;
+      initialPeers = [ ];
+    };
+  };
+
+  # Four-node: four VMs with TAP networking for mesh P2P testing
+  mkFourNodeVMs = arch: {
+    vmA = mkMicrovm {
+      inherit arch;
+      variant = "four-node-a";
+      portOffset = 0;
+      networking = "tap";
+      services = [ "kwaainet" ];
+      httpChecks = [ ];
+      macAddress = "52:54:00:12:34:0a";
+      vmIp = constants.network.vmA;
+      tapDevice = constants.network.tapA;
+      initialPeers = [ ];
+    };
+    vmB = mkMicrovm {
+      inherit arch;
+      variant = "four-node-b";
+      portOffset = 600;
+      networking = "tap";
+      services = [ "kwaainet" ];
+      httpChecks = [ ];
+      macAddress = "52:54:00:12:34:0b";
+      vmIp = constants.network.vmB;
+      tapDevice = constants.network.tapB;
+      initialPeers = [ ];
+    };
+    vmC = mkMicrovm {
+      inherit arch;
+      variant = "four-node-c";
+      portOffset = 1200;
+      networking = "tap";
+      services = [ "kwaainet" ];
+      httpChecks = [ ];
+      macAddress = "52:54:00:12:34:0c";
+      vmIp = constants.network.vmC;
+      tapDevice = constants.network.tapC;
+      initialPeers = [ ];
+    };
+    vmD = mkMicrovm {
+      inherit arch;
+      variant = "four-node-d";
+      portOffset = 1800;
+      networking = "tap";
+      services = [ "kwaainet" ];
+      httpChecks = [ ];
+      macAddress = "52:54:00:12:34:0d";
+      vmIp = constants.network.vmD;
+      tapDevice = constants.network.tapD;
+      initialPeers = [ ];
+    };
+  };
+
   # Check if an architecture has the required cross-compiled binaries
   archHasBinaries =
     arch:
@@ -482,6 +595,8 @@ let
         builtins.elem name constants.archVariants.${arch}
         && name != "two-node"
         && name != "two-node-services"
+        && name != "four-node"
+        && name != "four-node-services"
       ) constants.variants
     );
 
@@ -497,6 +612,8 @@ in
     mkVariant
     mkTwoNodeVMs
     mkTwoNodeServicesVMs
+    mkFourNodeVMs
+    mkFourNodeServicesVMs
     constants
     variants
     ;

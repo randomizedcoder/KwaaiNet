@@ -152,7 +152,8 @@
       fi
     '';
 
-  # Poll for peer discovery evidence
+  # Poll for peer discovery evidence — look for actual DHT activity,
+  # not just "peer" (which false-matches the startup "Peer ID:" log).
   mkPeerDiscoveryCheck =
     {
       observerHost,
@@ -161,7 +162,7 @@
     }:
     ''
       disc_start=$(time_ms)
-      if wait_for_journal_entry "${observerHost}" "${toString observerPort}" "kwaainet" "peer" ${toString timeout}; then
+      if wait_for_journal_entry "${observerHost}" "${toString observerPort}" "kwaainet" "STORE response\|Connected to.*bootstrap" ${toString timeout}; then
         result_pass "peer discovery detected on ${observerHost}" "$(elapsed_ms "$disc_start")"
         record_pass
       else

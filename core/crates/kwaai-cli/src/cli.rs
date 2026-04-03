@@ -181,6 +181,14 @@ pub struct StartArgs {
     #[arg(long)]
     pub no_relay: bool,
 
+    /// Override start_block from config.yaml
+    #[arg(long)]
+    pub start_block: Option<u32>,
+
+    /// Comma-separated list of bootstrap peer multiaddrs
+    #[arg(long, value_delimiter = ',')]
+    pub initial_peers: Option<Vec<String>>,
+
     /// Run in background (daemon mode)
     #[arg(long)]
     pub daemon: bool,

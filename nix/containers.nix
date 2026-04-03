@@ -25,6 +25,8 @@ let
   ];
 
   # Helper — builds a streamLayeredImage for a single binary.
+  # Returns the derivation with an extra `inputsHash` attribute so tests
+  # can skip `docker load` when the image hasn't changed.
   mkContainer =
     {
       name,
@@ -34,36 +36,44 @@ let
       extraConfig ? { },
       entrypoint ? [ "${binary}/bin/${name}" ],
     }:
-    pkgs.dockerTools.streamLayeredImage ({
-      inherit name;
-      tag = binary.version or "latest";
+    let
+      allContents = [ binary ] ++ baseContents ++ extraContents;
+      inputsHash = builtins.substring 0 32 (
+        builtins.hashString "sha256" (
+          builtins.concatStringsSep ":" (map (p: p.outPath) allContents)
+        )
+      );
+      image = pkgs.dockerTools.streamLayeredImage ({
+        inherit name;
+        tag = binary.version or "latest";
 
-      contents = baseContents ++ [ binary ] ++ extraContents;
+        contents = baseContents ++ [ binary ] ++ extraContents;
 
-      config = {
-        Entrypoint = entrypoint;
-        Env = [
-          "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-          "TZDIR=${pkgs.tzdata}/share/zoneinfo"
-        ];
-        Labels = {
-          "nix.inputs.hash" = builtins.hashString "sha256" (
-            builtins.toJSON (map toString ([ binary ] ++ baseContents ++ extraContents))
-          );
-        };
-      }
-      // (
-        if port != null then
-          {
-            ExposedPorts = {
-              "${toString port}/tcp" = { };
-            };
-          }
-        else
-          { }
-      )
-      // extraConfig;
-    });
+        config = {
+          Entrypoint = entrypoint;
+          Env = [
+            "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            "TZDIR=${pkgs.tzdata}/share/zoneinfo"
+          ];
+          Labels = {
+            "nix.inputs.hash" = inputsHash;
+          };
+        }
+        // (
+          if port != null then
+            {
+              ExposedPorts = {
+                "${toString port}/tcp" = { };
+              };
+            }
+          else
+            { }
+        )
+        // extraConfig;
+      });
+      imageTag = binary.version or "latest";
+    in
+    image // { inherit inputsHash imageTag; };
 
 in
 {

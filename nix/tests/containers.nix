@@ -44,15 +44,21 @@ pkgs.writeShellApplication {
     test_container() {
       local name="$1"
       local stream_script="$2"
-      local test_args="''${3:---help}"
+      local expected_hash="$3"
+      local test_args="''${4:---help}"
 
       echo ""
       echo "=== Testing $name container ==="
 
-      # 1. Stream and load the image
-      echo "  Loading image..."
-      "$stream_script" | "$RUNTIME" load
-      echo "  PASS: image loaded"
+      # 1. Stream and load the image (skip if inputs haven't changed)
+      LOADED_HASH=$("$RUNTIME" inspect "$name" --format '{{index .Config.Labels "nix.inputs.hash"}}' 2>/dev/null || echo "")
+      if [[ -n "$expected_hash" && "$expected_hash" == "$LOADED_HASH" ]]; then
+        echo "  SKIP: image unchanged (hash $expected_hash), skipping load"
+      else
+        echo "  Loading image..."
+        "$stream_script" | "$RUNTIME" load
+        echo "  PASS: image loaded"
+      fi
 
       # 2. Check image size
       SIZE_BYTES="$("$RUNTIME" image inspect "$name" --format '{{.Size}}' 2>/dev/null || echo 0)"
@@ -81,9 +87,9 @@ pkgs.writeShellApplication {
       fi
     }
 
-    test_container "kwaainet"       "${containers.kwaainet-container}"       "--help"
-    test_container "map-server"     "${containers.map-server-container}"     "--help"
-    test_container "kwaainet-all"   "${containers.kwaainet-all-container}"   "--help"
+    test_container "kwaainet"       "${containers.kwaainet-container}"       "${containers.kwaainet-container.inputsHash}"     "--help"
+    test_container "map-server"     "${containers.map-server-container}"     "${containers.map-server-container.inputsHash}"   "--help"
+    test_container "kwaainet-all"   "${containers.kwaainet-all-container}"   "${containers.kwaainet-all-container.inputsHash}" "--help"
 
     echo ""
     echo "=== Results: $PASS passed, $FAIL failed ==="

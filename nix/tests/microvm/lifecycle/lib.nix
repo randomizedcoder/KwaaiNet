@@ -265,7 +265,17 @@ let
     extract_peer_id() {
       local host="$1"
       local port="$2"
-      ssh_cmd "$host" "$port" "kwaainet identity show 2>/dev/null | grep -oP 'Peer ID: \K.*'" || echo ""
+      # Prefer the journal — the Peer ID is logged at startup as
+      # "Peer ID: 12D3Koo..." and doesn't require running the CLI
+      # (which takes ~25s for full initialisation under the wrong HOME).
+      local pid
+      pid=$(ssh_cmd "$host" "$port" "journalctl -u kwaainet --no-pager -q 2>/dev/null | grep -oP 'Peer ID:\\s+\\K\\S+' | tail -1" || echo "")
+      if [[ -n "$pid" ]]; then
+        echo "$pid"
+      else
+        # Fallback: run CLI with correct HOME
+        ssh_cmd "$host" "$port" "HOME=/var/lib/kwaainet kwaainet identity show 2>/dev/null | grep -oP 'Peer ID:\\s+\\K\\S+'" || echo ""
+      fi
     }
 
     build_multiaddr() {
@@ -279,8 +289,15 @@ let
       local host="$1"
       local port="$2"
       local multiaddr="$3"
-      ssh_cmd "$host" "$port" "kwaainet config set initial_peers '$multiaddr'"
-      ssh_cmd "$host" "$port" "systemctl restart kwaainet"
+      # The kwaainet service runs as user kwaainet with HOME=/var/lib/kwaainet.
+      # Config lives at /var/lib/kwaainet/.kwaainet/config.yaml (created by
+      # ExecStartPre = kwaainet setup).
+      # Use `kwaainet config set` with correct HOME to update initial_peers,
+      # then restart the service to pick up the new bootstrap peer.
+      ssh_cmd "$host" "$port" "
+        HOME=/var/lib/kwaainet kwaainet config set initial_peers '$multiaddr'
+        systemctl restart kwaainet
+      "
     }
   '';
 

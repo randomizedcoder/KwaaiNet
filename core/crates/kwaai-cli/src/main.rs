@@ -96,6 +96,12 @@ async fn main() -> Result<()> {
             if args.no_relay {
                 cfg.no_relay = true;
             }
+            if let Some(sb) = args.start_block {
+                cfg.start_block = sb;
+            }
+            if let Some(peers) = args.initial_peers {
+                cfg.initial_peers = peers;
+            }
 
             // ── Read the network map and select the best locally-available model ──
             if !explicit_model {

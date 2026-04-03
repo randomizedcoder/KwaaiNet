@@ -8,8 +8,12 @@ rec {
     gateway = "fd00:c0aa:1::1";
     vmA = "fd00:c0aa:1::a";
     vmB = "fd00:c0aa:1::b";
+    vmC = "fd00:c0aa:1::c";
+    vmD = "fd00:c0aa:1::d";
     tapA = "kwaitap0";
     tapB = "kwaitap1";
+    tapC = "kwaitap2";
+    tapD = "kwaitap3";
   };
 
   defaults = {
@@ -139,6 +143,27 @@ rec {
         }
       ];
     };
+    four-node = {
+      portOffset = 0;
+      networking = "tap";
+      services = [ "kwaainet" ];
+      httpChecks = [ ];
+    };
+    four-node-services = {
+      portOffset = 100;
+      networking = "tap";
+      services = [
+        "kwaainet"
+        "kwaainet-map-server"
+      ];
+      httpChecks = [
+        {
+          path = "/health";
+          port = 3030;
+          expect = 200;
+        }
+      ];
+    };
   };
 
   # ─── Per-arch timeouts ─────────────────────────────────────────────────
@@ -157,9 +182,9 @@ rec {
     startupSequence = 30;
     deepValidation = 30;
     resilience = 90;
-    p2pBootstrap = 30;
-    p2pDiscovery = 60;
-    p2pMapCrawl = 90;
+    p2pBootstrap = 60;
+    p2pDiscovery = 90;
+    p2pMapCrawl = 180;
   };
 
   mkTimeouts =

@@ -15,6 +15,8 @@ let
     prefix
     tapA
     tapB
+    tapC
+    tapD
     ;
 in
 {
@@ -111,7 +113,7 @@ in
       fi
 
       # Create TAP devices
-      for tap in ${tapA} ${tapB}; do
+      for tap in ${tapA} ${tapB} ${tapC} ${tapD}; do
         if ip link show "$tap" &>/dev/null; then
           echo "Removing existing TAP device $tap..."
           ip link del "$tap"
@@ -167,9 +169,11 @@ in
     EOF
 
       echo ""
-      echo "Network ready. Two-node VMs will use:"
+      echo "Network ready. VMs will use:"
       echo "  VM-A: ${constants.network.vmA}"
       echo "  VM-B: ${constants.network.vmB}"
+      echo "  VM-C: ${constants.network.vmC}"
+      echo "  VM-D: ${constants.network.vmD}"
       echo "  Bridge: ${bridge}"
     '';
   };
@@ -190,7 +194,7 @@ in
       fi
 
       # Remove TAP devices
-      for tap in ${tapA} ${tapB}; do
+      for tap in ${tapA} ${tapB} ${tapC} ${tapD}; do
         if ip link show "$tap" &>/dev/null; then
           ip link del "$tap"
           echo "Removed TAP device $tap"

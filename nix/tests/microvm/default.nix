@@ -43,7 +43,7 @@ let
       containers
       k8sManifests
       ;
-    inherit (microvmLib) mkMicrovm mkTwoNodeVMs mkTwoNodeServicesVMs;
+    inherit (microvmLib) mkMicrovm mkTwoNodeVMs mkTwoNodeServicesVMs mkFourNodeVMs mkFourNodeServicesVMs;
     microvmVariants = microvmLib.variants;
   };
 

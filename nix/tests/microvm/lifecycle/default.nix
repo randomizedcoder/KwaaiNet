@@ -13,6 +13,8 @@
   mkMicrovm,
   mkTwoNodeVMs,
   mkTwoNodeServicesVMs ? null,
+  mkFourNodeVMs ? null,
+  mkFourNodeServicesVMs ? null,
   microvmVariants,
   kwaainet,
   map-server,
@@ -627,7 +629,7 @@ let
         phase_header "9" "DHT Bootstrap" "${toString archTimeouts.p2pBootstrap}"
         start_time=$(time_ms)
         if [[ -n "$PEER_ID_A" ]]; then
-          if wait_for_journal_entry "$SSH_HOST_B" "$SSH_PORT" "kwaainet" "ootstrap" ${toString archTimeouts.p2pBootstrap}; then
+          if wait_for_journal_entry "$SSH_HOST_B" "$SSH_PORT" "kwaainet" "Dialed bootstrap\|Connected to.*bootstrap" ${toString archTimeouts.p2pBootstrap}; then
             result_pass "VM-B DHT bootstrap detected" "$(elapsed_ms "$start_time")"
             record_pass
           else
@@ -723,9 +725,11 @@ let
         phase_header "11" "Map Server Discovery" "${toString archTimeouts.p2pMapCrawl}"
         ${p2pChecks.mkMapServerNodeCountCheck {
           host = vmAHost;
+          timeout = archTimeouts.p2pMapCrawl;
         }}
         ${p2pChecks.mkMapServerPeerVisibleCheck {
           host = vmAHost;
+          timeout = archTimeouts.p2pMapCrawl;
         }}
 
         # ─── Phase 12: Map Server Deep Checks ─────────────────────
@@ -740,6 +744,695 @@ let
       '';
     };
 
+  # ─── Four-node lifecycle test ──────────────────────────────────────────────
+  mkFourNodeTest =
+    arch:
+    let
+      archCfg = constants.architectures.${arch};
+      archTimeouts = constants.getTimeouts arch;
+      fourNodeVMs = mkFourNodeVMs arch;
+      vmA = fourNodeVMs.vmA;
+      vmB = fourNodeVMs.vmB;
+      vmC = fourNodeVMs.vmC;
+      vmD = fourNodeVMs.vmD;
+      vmAHost = constants.network.vmA;
+      vmBHost = constants.network.vmB;
+      vmCHost = constants.network.vmC;
+      vmDHost = constants.network.vmD;
+      p2pPort = toString constants.defaults.kwaainetPort;
+    in
+    pkgs.writeShellApplication {
+      name = "kwaainet-lifecycle-full-test-${arch}-four-node";
+      runtimeInputs =
+        commonInputs
+        ++ sshInputs
+        ++ [
+          pkgs.curl
+          pkgs.iproute2
+        ];
+      text = ''
+        ${testPreamble}
+
+        HOSTNAME_A="kwaainet-${arch}-four-node-a-vm"
+        HOSTNAME_B="kwaainet-${arch}-four-node-b-vm"
+        HOSTNAME_C="kwaainet-${arch}-four-node-c-vm"
+        HOSTNAME_D="kwaainet-${arch}-four-node-d-vm"
+        SSH_HOST_A="${vmAHost}"
+        SSH_HOST_B="${vmBHost}"
+        SSH_HOST_C="${vmCHost}"
+        SSH_HOST_D="${vmDHost}"
+        SSH_PORT=22
+        PEER_ID_A=""
+        PEER_ID_B=""
+        PEER_ID_C=""
+        PEER_ID_D=""
+
+        cleanup() {
+          kill_vm "$HOSTNAME_A" 2>/dev/null || true
+          kill_vm "$HOSTNAME_B" 2>/dev/null || true
+          kill_vm "$HOSTNAME_C" 2>/dev/null || true
+          kill_vm "$HOSTNAME_D" 2>/dev/null || true
+        }
+        trap cleanup EXIT
+
+        bold "========================================"
+        bold "  KwaaiNet FOUR-NODE Lifecycle Test"
+        bold "  Arch: ${arch} | ${archCfg.description}"
+        bold "========================================"
+        echo ""
+
+        # ─── Phase 0: TAP prerequisite ──────────────────────────────
+        phase_header "0" "TAP Prerequisite" "5"
+        if check_tap_available; then
+          result_pass "Bridge ${constants.network.bridge} available" "0"
+          record_pass
+        else
+          result_fail "Bridge ${constants.network.bridge} not found — run: sudo nix run .#kwaainet-network-setup" "0"
+          record_fail
+          exit 1
+        fi
+
+        # ─── Phase 1: Start all 4 VMs ──────────────────────────────
+        phase_header "1" "Start 4 VMs (${arch})" "${toString archTimeouts.start}"
+
+        for vm_info in \
+          "A:$HOSTNAME_A:${vmA.runner}/bin/microvm-run" \
+          "B:$HOSTNAME_B:${vmB.runner}/bin/microvm-run" \
+          "C:$HOSTNAME_C:${vmC.runner}/bin/microvm-run" \
+          "D:$HOSTNAME_D:${vmD.runner}/bin/microvm-run"
+        do
+          IFS=: read -r label hostname runner <<< "$vm_info"
+          start_time=$(time_ms)
+
+          if vm_is_running "$hostname"; then
+            warn "  Killing existing VM-$label..."
+            kill_vm "$hostname"
+            sleep 2
+          fi
+
+          "$runner" &
+
+          if wait_for_process "$hostname" "${toString archTimeouts.start}"; then
+            result_pass "VM-$label running" "$(elapsed_ms "$start_time")"
+            record_pass
+          else
+            result_fail "VM-$label not started" "$(elapsed_ms "$start_time")"
+            record_fail
+            exit 1
+          fi
+        done
+
+        # ─── Phase 2: SSH + Services on all VMs ─────────────────────
+        phase_header "2" "SSH + kwaainet on all VMs" "${toString archTimeouts.services}"
+        for vm_info in \
+          "A:$SSH_HOST_A" \
+          "B:$SSH_HOST_B" \
+          "C:$SSH_HOST_C" \
+          "D:$SSH_HOST_D"
+        do
+          IFS=: read -r label host <<< "$vm_info"
+          start_time=$(time_ms)
+          if wait_for_ssh "$host" "$SSH_PORT" "${toString archTimeouts.services}"; then
+            result_pass "VM-$label SSH connected" "$(elapsed_ms "$start_time")"
+            record_pass
+          else
+            result_fail "VM-$label SSH not available" "$(elapsed_ms "$start_time")"
+            record_fail
+          fi
+
+          start_time=$(time_ms)
+          if wait_for_service "$host" "$SSH_PORT" "kwaainet" 60; then
+            result_pass "VM-$label kwaainet active" "$(elapsed_ms "$start_time")"
+            record_pass
+          else
+            result_fail "VM-$label kwaainet not active" "$(elapsed_ms "$start_time")"
+            record_fail
+          fi
+        done
+
+        # ─── Phase 3: Extract all Peer IDs ──────────────────────────
+        phase_header "3" "Extract Peer IDs" "${toString archTimeouts.node}"
+
+        start_time=$(time_ms)
+        PEER_ID_A=$(extract_peer_id "$SSH_HOST_A" "$SSH_PORT")
+        if [[ -n "$PEER_ID_A" ]]; then
+          result_pass "VM-A Peer ID: $PEER_ID_A" "$(elapsed_ms "$start_time")"
+          record_pass
+        else
+          result_skip "VM-A Peer ID extraction failed"
+        fi
+
+        start_time=$(time_ms)
+        PEER_ID_B=$(extract_peer_id "$SSH_HOST_B" "$SSH_PORT")
+        if [[ -n "$PEER_ID_B" ]]; then
+          result_pass "VM-B Peer ID: $PEER_ID_B" "$(elapsed_ms "$start_time")"
+          record_pass
+        else
+          result_skip "VM-B Peer ID extraction failed"
+        fi
+
+        start_time=$(time_ms)
+        PEER_ID_C=$(extract_peer_id "$SSH_HOST_C" "$SSH_PORT")
+        if [[ -n "$PEER_ID_C" ]]; then
+          result_pass "VM-C Peer ID: $PEER_ID_C" "$(elapsed_ms "$start_time")"
+          record_pass
+        else
+          result_skip "VM-C Peer ID extraction failed"
+        fi
+
+        start_time=$(time_ms)
+        PEER_ID_D=$(extract_peer_id "$SSH_HOST_D" "$SSH_PORT")
+        if [[ -n "$PEER_ID_D" ]]; then
+          result_pass "VM-D Peer ID: $PEER_ID_D" "$(elapsed_ms "$start_time")"
+          record_pass
+        else
+          result_skip "VM-D Peer ID extraction failed"
+        fi
+
+        # Verify all extracted IDs are distinct
+        start_time=$(time_ms)
+        id_count=0
+        unique_ids=""
+        for id in "$PEER_ID_A" "$PEER_ID_B" "$PEER_ID_C" "$PEER_ID_D"; do
+          if [[ -n "$id" ]]; then
+            id_count=$((id_count + 1))
+            if ! echo "$unique_ids" | grep -qF "$id"; then
+              unique_ids="$unique_ids $id"
+            fi
+          fi
+        done
+        # shellcheck disable=SC2086
+        unique_count=$(echo $unique_ids | wc -w)
+        if [[ $id_count -ge 2 ]] && [[ "$unique_count" -eq "$id_count" ]]; then
+          result_pass "All $unique_count Peer IDs are distinct" "$(elapsed_ms "$start_time")"
+          record_pass
+        elif [[ $id_count -lt 2 ]]; then
+          result_skip "Not enough Peer IDs extracted for uniqueness check"
+        else
+          result_fail "Duplicate Peer IDs found ($unique_count unique out of $id_count)" "$(elapsed_ms "$start_time")"
+          record_fail
+        fi
+
+        # ─── Phase 4: Full-mesh IPv6 connectivity ───────────────────
+        phase_header "4" "IPv6 Full-Mesh Ping" "${toString archTimeouts.p2p}"
+        hosts=("$SSH_HOST_A" "$SSH_HOST_B" "$SSH_HOST_C" "$SSH_HOST_D")
+        labels=("A" "B" "C" "D")
+        for i in 0 1 2 3; do
+          for j in 0 1 2 3; do
+            [[ $i -eq $j ]] && continue
+            start_time=$(time_ms)
+            if ssh_cmd "''${hosts[$i]}" "$SSH_PORT" "ping -6 -c 2 -W 5 ''${hosts[$j]}" >/dev/null 2>&1; then
+              result_pass "VM-''${labels[$i]} -> VM-''${labels[$j]} ping" "$(elapsed_ms "$start_time")"
+              record_pass
+            else
+              result_fail "VM-''${labels[$i]} -> VM-''${labels[$j]} ping failed" "$(elapsed_ms "$start_time")"
+              record_fail
+            fi
+          done
+        done
+
+        # ─── Phase 5: P2P port listening on all VMs ────────────────
+        phase_header "5" "P2P Port Check" "${toString archTimeouts.deepValidation}"
+        for vm_info in \
+          "A:$SSH_HOST_A" \
+          "B:$SSH_HOST_B" \
+          "C:$SSH_HOST_C" \
+          "D:$SSH_HOST_D"
+        do
+          IFS=: read -r label host <<< "$vm_info"
+          start_time=$(time_ms)
+          if ssh_cmd "$host" "$SSH_PORT" "ss -tlnp 2>/dev/null | grep -q ':${p2pPort} '"; then
+            result_pass "VM-$label P2P port ${p2pPort} listening" "$(elapsed_ms "$start_time")"
+            record_pass
+          else
+            result_skip "VM-$label P2P port ${p2pPort} not yet listening"
+          fi
+        done
+
+        # ─── Phase 6: Inject VM-A as bootstrap peer into B, C, D ───
+        phase_header "6" "Bootstrap Peer Injection" "${toString archTimeouts.p2pBootstrap}"
+        if [[ -n "$PEER_ID_A" ]]; then
+          MULTIADDR=$(build_multiaddr "${vmAHost}" "${p2pPort}" "$PEER_ID_A")
+          info "  Bootstrap multiaddr: $MULTIADDR"
+          for vm_info in \
+            "B:$SSH_HOST_B" \
+            "C:$SSH_HOST_C" \
+            "D:$SSH_HOST_D"
+          do
+            IFS=: read -r label host <<< "$vm_info"
+            start_time=$(time_ms)
+            inject_bootstrap_peer "$host" "$SSH_PORT" "$MULTIADDR"
+            result_pass "Injected into VM-$label" "$(elapsed_ms "$start_time")"
+            record_pass
+          done
+        else
+          result_skip "Bootstrap injection skipped (no VM-A Peer ID)"
+        fi
+
+        # ─── Phase 7: DHT Bootstrap on B, C, D ─────────────────────
+        phase_header "7" "DHT Bootstrap" "${toString archTimeouts.p2pBootstrap}"
+        for vm_info in \
+          "B:$SSH_HOST_B" \
+          "C:$SSH_HOST_C" \
+          "D:$SSH_HOST_D"
+        do
+          IFS=: read -r label host <<< "$vm_info"
+          start_time=$(time_ms)
+          if wait_for_journal_entry "$host" "$SSH_PORT" "kwaainet" "Dialed bootstrap\|Connected to.*bootstrap" ${toString archTimeouts.p2pBootstrap}; then
+            result_pass "VM-$label DHT bootstrap detected" "$(elapsed_ms "$start_time")"
+            record_pass
+          else
+            result_skip "VM-$label DHT bootstrap not detected"
+          fi
+        done
+
+        # ─── Phase 8: Peer Discovery ───────────────────────────────
+        phase_header "8" "Peer Discovery" "${toString archTimeouts.p2pDiscovery}"
+        for vm_info in \
+          "B:$SSH_HOST_B" \
+          "C:$SSH_HOST_C" \
+          "D:$SSH_HOST_D"
+        do
+          IFS=: read -r label host <<< "$vm_info"
+          start_time=$(time_ms)
+          if wait_for_journal_entry "$host" "$SSH_PORT" "kwaainet" "STORE response\|Connected to.*bootstrap" ${toString archTimeouts.p2pDiscovery}; then
+            result_pass "VM-$label peer discovery detected" "$(elapsed_ms "$start_time")"
+            record_pass
+          else
+            result_skip "VM-$label peer discovery not detected"
+          fi
+        done
+
+        # ─── Phase 9: Shutdown all VMs ──────────────────────────────
+        phase_header "9" "Shutdown" "${toString archTimeouts.shutdown}"
+        for vm_info in \
+          "D:$HOSTNAME_D:$SSH_HOST_D" \
+          "C:$HOSTNAME_C:$SSH_HOST_C" \
+          "B:$HOSTNAME_B:$SSH_HOST_B" \
+          "A:$HOSTNAME_A:$SSH_HOST_A"
+        do
+          IFS=: read -r label hostname host <<< "$vm_info"
+          start_time=$(time_ms)
+          ssh_cmd "$host" "$SSH_PORT" "systemctl reboot" 2>/dev/null || true
+          if ! wait_for_exit "$hostname" 30; then
+            qpid=$(vm_pid "$hostname")
+            [[ -n "$qpid" ]] && kill "$qpid" 2>/dev/null || true
+          fi
+          if wait_for_exit "$hostname" 15; then
+            result_pass "VM-$label exited cleanly" "$(elapsed_ms "$start_time")"
+            record_pass
+          else
+            kill_vm "$hostname"
+            result_fail "VM-$label forced kill" "$(elapsed_ms "$start_time")"
+            record_fail
+          fi
+        done
+
+        trap - EXIT
+
+        ${testSummary {
+          label = "FOUR-NODE TEST PASSED";
+          detail = "Arch: ${arch}";
+        }}
+      '';
+    };
+
+  # ─── Four-node-services lifecycle test ─────────────────────────────────────
+  # Like four-node but VM-A runs kwaainet + map-server.
+  # After P2P mesh forms, validates map-server sees all peers.
+  mkFourNodeServicesTest =
+    arch:
+    let
+      archCfg = constants.architectures.${arch};
+      archTimeouts = constants.getTimeouts arch;
+      fourNodeVMs = mkFourNodeServicesVMs arch;
+      vmA = fourNodeVMs.vmA;
+      vmB = fourNodeVMs.vmB;
+      vmC = fourNodeVMs.vmC;
+      vmD = fourNodeVMs.vmD;
+      vmAHost = constants.network.vmA;
+      vmBHost = constants.network.vmB;
+      vmCHost = constants.network.vmC;
+      vmDHost = constants.network.vmD;
+      p2pPort = toString constants.defaults.kwaainetPort;
+    in
+    pkgs.writeShellApplication {
+      name = "kwaainet-lifecycle-full-test-${arch}-four-node-services";
+      runtimeInputs =
+        commonInputs
+        ++ sshInputs
+        ++ [
+          pkgs.curl
+          pkgs.iproute2
+        ];
+      text = ''
+        ${testPreamble}
+
+        HOSTNAME_A="kwaainet-${arch}-four-node-services-a-vm"
+        HOSTNAME_B="kwaainet-${arch}-four-node-services-b-vm"
+        HOSTNAME_C="kwaainet-${arch}-four-node-services-c-vm"
+        HOSTNAME_D="kwaainet-${arch}-four-node-services-d-vm"
+        SSH_HOST_A="${vmAHost}"
+        SSH_HOST_B="${vmBHost}"
+        SSH_HOST_C="${vmCHost}"
+        SSH_HOST_D="${vmDHost}"
+        SSH_PORT=22
+        PEER_ID_A=""
+        PEER_ID_B=""
+        PEER_ID_C=""
+        PEER_ID_D=""
+
+        cleanup() {
+          kill_vm "$HOSTNAME_A" 2>/dev/null || true
+          kill_vm "$HOSTNAME_B" 2>/dev/null || true
+          kill_vm "$HOSTNAME_C" 2>/dev/null || true
+          kill_vm "$HOSTNAME_D" 2>/dev/null || true
+        }
+        trap cleanup EXIT
+
+        bold "========================================"
+        bold "  KwaaiNet FOUR-NODE-SERVICES Lifecycle Test"
+        bold "  Arch: ${arch} | ${archCfg.description}"
+        bold "========================================"
+        echo ""
+
+        # ─── Phase 0: TAP prerequisite ──────────────────────────────
+        phase_header "0" "TAP Prerequisite" "5"
+        if check_tap_available; then
+          result_pass "Bridge ${constants.network.bridge} available" "0"
+          record_pass
+        else
+          result_fail "Bridge ${constants.network.bridge} not found — run: sudo nix run .#kwaainet-network-setup" "0"
+          record_fail
+          exit 1
+        fi
+
+        # ─── Phase 1: Start all 4 VMs ──────────────────────────────
+        phase_header "1" "Start 4 VMs (${arch})" "${toString archTimeouts.start}"
+
+        for vm_info in \
+          "A:$HOSTNAME_A:${vmA.runner}/bin/microvm-run" \
+          "B:$HOSTNAME_B:${vmB.runner}/bin/microvm-run" \
+          "C:$HOSTNAME_C:${vmC.runner}/bin/microvm-run" \
+          "D:$HOSTNAME_D:${vmD.runner}/bin/microvm-run"
+        do
+          IFS=: read -r label hostname runner <<< "$vm_info"
+          start_time=$(time_ms)
+
+          if vm_is_running "$hostname"; then
+            warn "  Killing existing VM-$label..."
+            kill_vm "$hostname"
+            sleep 2
+          fi
+
+          "$runner" &
+
+          if wait_for_process "$hostname" "${toString archTimeouts.start}"; then
+            result_pass "VM-$label running" "$(elapsed_ms "$start_time")"
+            record_pass
+          else
+            result_fail "VM-$label not started" "$(elapsed_ms "$start_time")"
+            record_fail
+            exit 1
+          fi
+        done
+
+        # ─── Phase 2: SSH + Services on all VMs ─────────────────────
+        phase_header "2" "SSH + Services on all VMs" "${toString archTimeouts.services}"
+        for vm_info in \
+          "A:$SSH_HOST_A" \
+          "B:$SSH_HOST_B" \
+          "C:$SSH_HOST_C" \
+          "D:$SSH_HOST_D"
+        do
+          IFS=: read -r label host <<< "$vm_info"
+          start_time=$(time_ms)
+          if wait_for_ssh "$host" "$SSH_PORT" "${toString archTimeouts.services}"; then
+            result_pass "VM-$label SSH connected" "$(elapsed_ms "$start_time")"
+            record_pass
+          else
+            result_fail "VM-$label SSH not available" "$(elapsed_ms "$start_time")"
+            record_fail
+          fi
+
+          start_time=$(time_ms)
+          if wait_for_service "$host" "$SSH_PORT" "kwaainet" 60; then
+            result_pass "VM-$label kwaainet active" "$(elapsed_ms "$start_time")"
+            record_pass
+          else
+            result_fail "VM-$label kwaainet not active" "$(elapsed_ms "$start_time")"
+            record_fail
+          fi
+        done
+
+        # VM-A also runs map-server
+        start_time=$(time_ms)
+        if wait_for_service "$SSH_HOST_A" "$SSH_PORT" "kwaainet-map-server" 60; then
+          result_pass "VM-A kwaainet-map-server active" "$(elapsed_ms "$start_time")"
+          record_pass
+        else
+          result_fail "VM-A kwaainet-map-server not active" "$(elapsed_ms "$start_time")"
+          record_fail
+        fi
+
+        # ─── Phase 2b: Map Server Health ─────────────────────────────
+        phase_header "2b" "Map Server Health" "${toString archTimeouts.http}"
+        start_time=$(time_ms)
+        if ssh_cmd "$SSH_HOST_A" "$SSH_PORT" "curl -sf http://localhost:3030/health >/dev/null"; then
+          result_pass "VM-A map-server /health" "$(elapsed_ms "$start_time")"
+          record_pass
+        else
+          result_fail "VM-A map-server /health" "$(elapsed_ms "$start_time")"
+          record_fail
+        fi
+
+        # ─── Phase 3: Extract all Peer IDs ──────────────────────────
+        phase_header "3" "Extract Peer IDs" "${toString archTimeouts.node}"
+
+        start_time=$(time_ms)
+        PEER_ID_A=$(extract_peer_id "$SSH_HOST_A" "$SSH_PORT")
+        if [[ -n "$PEER_ID_A" ]]; then
+          result_pass "VM-A Peer ID: $PEER_ID_A" "$(elapsed_ms "$start_time")"
+          record_pass
+        else
+          result_skip "VM-A Peer ID extraction failed"
+        fi
+
+        start_time=$(time_ms)
+        PEER_ID_B=$(extract_peer_id "$SSH_HOST_B" "$SSH_PORT")
+        if [[ -n "$PEER_ID_B" ]]; then
+          result_pass "VM-B Peer ID: $PEER_ID_B" "$(elapsed_ms "$start_time")"
+          record_pass
+        else
+          result_skip "VM-B Peer ID extraction failed"
+        fi
+
+        start_time=$(time_ms)
+        PEER_ID_C=$(extract_peer_id "$SSH_HOST_C" "$SSH_PORT")
+        if [[ -n "$PEER_ID_C" ]]; then
+          result_pass "VM-C Peer ID: $PEER_ID_C" "$(elapsed_ms "$start_time")"
+          record_pass
+        else
+          result_skip "VM-C Peer ID extraction failed"
+        fi
+
+        start_time=$(time_ms)
+        PEER_ID_D=$(extract_peer_id "$SSH_HOST_D" "$SSH_PORT")
+        if [[ -n "$PEER_ID_D" ]]; then
+          result_pass "VM-D Peer ID: $PEER_ID_D" "$(elapsed_ms "$start_time")"
+          record_pass
+        else
+          result_skip "VM-D Peer ID extraction failed"
+        fi
+
+        # Verify all extracted IDs are distinct
+        start_time=$(time_ms)
+        id_count=0
+        unique_ids=""
+        for id in "$PEER_ID_A" "$PEER_ID_B" "$PEER_ID_C" "$PEER_ID_D"; do
+          if [[ -n "$id" ]]; then
+            id_count=$((id_count + 1))
+            if ! echo "$unique_ids" | grep -qF "$id"; then
+              unique_ids="$unique_ids $id"
+            fi
+          fi
+        done
+        # shellcheck disable=SC2086
+        unique_count=$(echo $unique_ids | wc -w)
+        if [[ $id_count -ge 2 ]] && [[ "$unique_count" -eq "$id_count" ]]; then
+          result_pass "All $unique_count Peer IDs are distinct" "$(elapsed_ms "$start_time")"
+          record_pass
+        elif [[ $id_count -lt 2 ]]; then
+          result_skip "Not enough Peer IDs extracted for uniqueness check"
+        else
+          result_fail "Duplicate Peer IDs found ($unique_count unique out of $id_count)" "$(elapsed_ms "$start_time")"
+          record_fail
+        fi
+
+        # ─── Phase 4: Full-mesh IPv6 connectivity ───────────────────
+        phase_header "4" "IPv6 Full-Mesh Ping" "${toString archTimeouts.p2p}"
+        hosts=("$SSH_HOST_A" "$SSH_HOST_B" "$SSH_HOST_C" "$SSH_HOST_D")
+        labels=("A" "B" "C" "D")
+        for i in 0 1 2 3; do
+          for j in 0 1 2 3; do
+            [[ $i -eq $j ]] && continue
+            start_time=$(time_ms)
+            if ssh_cmd "''${hosts[$i]}" "$SSH_PORT" "ping -6 -c 2 -W 5 ''${hosts[$j]}" >/dev/null 2>&1; then
+              result_pass "VM-''${labels[$i]} -> VM-''${labels[$j]} ping" "$(elapsed_ms "$start_time")"
+              record_pass
+            else
+              result_fail "VM-''${labels[$i]} -> VM-''${labels[$j]} ping failed" "$(elapsed_ms "$start_time")"
+              record_fail
+            fi
+          done
+        done
+
+        # ─── Phase 5: P2P port listening on all VMs ────────────────
+        phase_header "5" "P2P Port Check" "${toString archTimeouts.deepValidation}"
+        for vm_info in \
+          "A:$SSH_HOST_A" \
+          "B:$SSH_HOST_B" \
+          "C:$SSH_HOST_C" \
+          "D:$SSH_HOST_D"
+        do
+          IFS=: read -r label host <<< "$vm_info"
+          start_time=$(time_ms)
+          if ssh_cmd "$host" "$SSH_PORT" "ss -tlnp 2>/dev/null | grep -q ':${p2pPort} '"; then
+            result_pass "VM-$label P2P port ${p2pPort} listening" "$(elapsed_ms "$start_time")"
+            record_pass
+          else
+            result_skip "VM-$label P2P port ${p2pPort} not yet listening"
+          fi
+        done
+
+        # ─── Phase 6: Inject VM-A as bootstrap peer into B, C, D ───
+        phase_header "6" "Bootstrap Peer Injection" "${toString archTimeouts.p2pBootstrap}"
+        if [[ -n "$PEER_ID_A" ]]; then
+          MULTIADDR=$(build_multiaddr "${vmAHost}" "${p2pPort}" "$PEER_ID_A")
+          info "  Bootstrap multiaddr: $MULTIADDR"
+          for vm_info in \
+            "B:$SSH_HOST_B" \
+            "C:$SSH_HOST_C" \
+            "D:$SSH_HOST_D"
+          do
+            IFS=: read -r label host <<< "$vm_info"
+            start_time=$(time_ms)
+            inject_bootstrap_peer "$host" "$SSH_PORT" "$MULTIADDR"
+            result_pass "Injected into VM-$label" "$(elapsed_ms "$start_time")"
+            record_pass
+          done
+        else
+          result_skip "Bootstrap injection skipped (no VM-A Peer ID)"
+        fi
+
+        # ─── Phase 7: DHT Bootstrap on B, C, D ─────────────────────
+        phase_header "7" "DHT Bootstrap" "${toString archTimeouts.p2pBootstrap}"
+        for vm_info in \
+          "B:$SSH_HOST_B" \
+          "C:$SSH_HOST_C" \
+          "D:$SSH_HOST_D"
+        do
+          IFS=: read -r label host <<< "$vm_info"
+          start_time=$(time_ms)
+          if wait_for_journal_entry "$host" "$SSH_PORT" "kwaainet" "Dialed bootstrap\|Connected to.*bootstrap" ${toString archTimeouts.p2pBootstrap}; then
+            result_pass "VM-$label DHT bootstrap detected" "$(elapsed_ms "$start_time")"
+            record_pass
+          else
+            result_skip "VM-$label DHT bootstrap not detected"
+          fi
+        done
+
+        # ─── Phase 8: Peer Discovery ───────────────────────────────
+        phase_header "8" "Peer Discovery" "${toString archTimeouts.p2pDiscovery}"
+        for vm_info in \
+          "B:$SSH_HOST_B" \
+          "C:$SSH_HOST_C" \
+          "D:$SSH_HOST_D"
+        do
+          IFS=: read -r label host <<< "$vm_info"
+          start_time=$(time_ms)
+          if wait_for_journal_entry "$host" "$SSH_PORT" "kwaainet" "STORE response\|Connected to.*bootstrap" ${toString archTimeouts.p2pDiscovery}; then
+            result_pass "VM-$label peer discovery detected" "$(elapsed_ms "$start_time")"
+            record_pass
+          else
+            result_skip "VM-$label peer discovery not detected"
+          fi
+        done
+
+        # ─── Phase 9: Map Server Discovery ──────────────────────────
+        phase_header "9" "Map Server Discovery" "${toString archTimeouts.p2pMapCrawl}"
+        ${p2pChecks.mkMapServerNodeCountCheck {
+          host = vmAHost;
+          minNodes = 2;
+          timeout = archTimeouts.p2pMapCrawl;
+        }}
+
+        # Check that map-server can see at least one remote peer
+        vis_start=$(time_ms)
+        elapsed=0
+        found=0
+        found_id=""
+        while [[ $elapsed -lt ${toString archTimeouts.p2pMapCrawl} ]]; do
+          body=$(ssh_cmd "${vmAHost}" "$SSH_PORT" "curl -sf http://localhost:3030/api/nodes 2>/dev/null" || echo "")
+          for pid in "$PEER_ID_B" "$PEER_ID_C" "$PEER_ID_D"; do
+            if [[ -n "$pid" ]] && echo "$body" | grep -q "$pid"; then
+              found=1
+              found_id="$pid"
+              break
+            fi
+          done
+          [[ $found -eq 1 ]] && break
+          sleep 5
+          elapsed=$((elapsed + 5))
+        done
+        if [[ $found -eq 1 ]]; then
+          result_pass "map-server sees remote peer ($found_id)" "$(elapsed_ms "$vis_start")"
+          record_pass
+        else
+          result_skip "map-server did not see any remote peer within ${toString archTimeouts.p2pMapCrawl}s"
+        fi
+
+        # ─── Phase 10: Map Server Deep Checks ──────────────────────
+        phase_header "10" "Map Server Validation" "${toString archTimeouts.deepValidation}"
+        SSH_HOST="$SSH_HOST_A"
+        ${deepChecks.mkMapServerHealthDeep { }}
+        ${deepChecks.mkMapServerStatsCheck { }}
+        ${deepChecks.mkMapServerNodesCheck { }}
+
+        # ─── Phase 11: Shutdown all VMs ─────────────────────────────
+        phase_header "11" "Shutdown" "${toString archTimeouts.shutdown}"
+        for vm_info in \
+          "D:$HOSTNAME_D:$SSH_HOST_D" \
+          "C:$HOSTNAME_C:$SSH_HOST_C" \
+          "B:$HOSTNAME_B:$SSH_HOST_B" \
+          "A:$HOSTNAME_A:$SSH_HOST_A"
+        do
+          IFS=: read -r label hostname host <<< "$vm_info"
+          start_time=$(time_ms)
+          ssh_cmd "$host" "$SSH_PORT" "systemctl reboot" 2>/dev/null || true
+          if ! wait_for_exit "$hostname" 30; then
+            qpid=$(vm_pid "$hostname")
+            [[ -n "$qpid" ]] && kill "$qpid" 2>/dev/null || true
+          fi
+          if wait_for_exit "$hostname" 15; then
+            result_pass "VM-$label exited cleanly" "$(elapsed_ms "$start_time")"
+            record_pass
+          else
+            kill_vm "$hostname"
+            result_fail "VM-$label forced kill" "$(elapsed_ms "$start_time")"
+            record_fail
+          fi
+        done
+
+        trap - EXIT
+
+        ${testSummary {
+          label = "FOUR-NODE-SERVICES TEST PASSED";
+          detail = "Arch: ${arch}";
+        }}
+      '';
+    };
+
   # ─── All architectures and variants ───────────────────────────────────────
   # Derive available architectures from microvmVariants keys
   # (only archs with cross-compiled binaries will have variants)
@@ -747,12 +1440,14 @@ let
     map (name: lib.head (lib.splitString "-" name)) (builtins.attrNames microvmVariants)
   );
 
-  # User-mode variants (exclude two-node variants) per arch
-  twoNodeVariants = [
+  # User-mode variants (exclude multi-VM tap variants) per arch
+  tapVariants = [
     "two-node"
     "two-node-services"
+    "four-node"
+    "four-node-services"
   ];
-  userVariantNames = builtins.filter (n: !builtins.elem n twoNodeVariants) (
+  userVariantNames = builtins.filter (n: !builtins.elem n tapVariants) (
     builtins.attrNames constants.variants
   );
 
@@ -768,7 +1463,7 @@ let
           builtins.filter (
             v:
             builtins.elem v constants.archVariants.${arch}
-            && !builtins.elem v twoNodeVariants
+            && !builtins.elem v tapVariants
             && microvmVariants ? "${arch}-${v}"
           ) userVariantNames
         )
@@ -781,6 +1476,18 @@ let
           (builtins.elem "two-node-services" constants.archVariants.${arch} && mkTwoNodeServicesVMs != null)
           {
             "${arch}-two-node-services" = mkTwoNodeServicesTest arch;
+          }
+      //
+        lib.optionalAttrs
+          (builtins.elem "four-node" constants.archVariants.${arch} && mkFourNodeVMs != null)
+          {
+            "${arch}-four-node" = mkFourNodeTest arch;
+          }
+      //
+        lib.optionalAttrs
+          (builtins.elem "four-node-services" constants.archVariants.${arch} && mkFourNodeServicesVMs != null)
+          {
+            "${arch}-four-node-services" = mkFourNodeServicesTest arch;
           }
     )
   ) constants.architectures;
