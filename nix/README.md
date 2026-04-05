@@ -122,6 +122,8 @@ outputs coexist.  Use `make -j` for parallel builds.
 | `make check` | `nix flake check` | smoke test + clippy + cargo test |
 | `make test` | `nix run .#test-two-node` | two-node integration test |
 | `make test-containers` | `nix run .#test-containers` | container image test suite |
+| `make test-everything` | — | full suite: check + test + containers + cross + lifecycle |
+| `make test-lifecycle-all` | `nix run .#kwaainet-lifecycle-test-all` | all 9 variants × 3 architectures |
 | `make fmt` | `nix fmt` | format all Nix files |
 | `make develop` | `nix develop` | enter development shell |
 | `make clean` | — | remove all result symlinks |
@@ -255,7 +257,7 @@ nix/
     cross-smoke.nix       QEMU user-mode smoke test for cross-compiled binaries
     smoke.nix             sandboxed: --help, setup, identity show
     two-node.nix          integration: two nodes, distinct identities, port config
-    microvm/              MicroVM lifecycle testing (see microvm-testing.md)
+    microvm/              MicroVM lifecycle testing — 9 variants × 3 architectures (see microvm-testing.md)
 ```
 
 ### Design decisions
