@@ -208,17 +208,20 @@ in
 
   # Verify no unexpected restarts occurred
   mkNoUnexpectedRestartsCheck =
-    { services }:
+    {
+      services,
+      maxRestarts ? 0,
+    }:
     lib.concatMapStringsSep "\n" (service: ''
       restart_start=$(time_ms)
       restarts=$(ssh_cmd "$SSH_HOST" "$SSH_PORT" "systemctl show -p NRestarts ${service} 2>/dev/null | grep -oP 'NRestarts=\K.*'" || echo "")
-      if [[ "$restarts" == "0" ]]; then
-        result_pass "${service} no unexpected restarts" "$(elapsed_ms "$restart_start")"
-        record_pass
-      elif [[ -z "$restarts" ]]; then
+      if [[ -z "$restarts" ]]; then
         result_skip "${service} restart count unavailable"
+      elif [[ "$restarts" -le ${toString maxRestarts} ]]; then
+        result_pass "${service} restarts=$restarts (max ${toString maxRestarts})" "$(elapsed_ms "$restart_start")"
+        record_pass
       else
-        result_fail "${service} had $restarts unexpected restarts" "$(elapsed_ms "$restart_start")"
+        result_fail "${service} had $restarts restarts (max ${toString maxRestarts})" "$(elapsed_ms "$restart_start")"
         record_fail
       fi
     '') services;

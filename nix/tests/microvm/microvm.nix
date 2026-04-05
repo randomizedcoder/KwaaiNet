@@ -99,6 +99,10 @@ let
       hostname = "kwaainet-${arch}-${variant}-vm";
       consolePorts = constants.consolePorts arch portOffset;
       sshForwardPort = constants.sshForwardPort arch portOffset;
+      # Arch-based offset for service port forwarding to avoid collisions
+      # when running multiple architectures in parallel.
+      # x86_64 → 0, aarch64 → 100, riscv64 → 200
+      archServiceOffset = constants.archPortBase.${arch} - constants.archPortBase.x86_64;
       useTap = networking == "tap";
 
       hasKwaainet = builtins.elem "kwaainet" services;
@@ -221,21 +225,21 @@ let
                     }
                     {
                       from = "host";
-                      host.port = constants.defaults.kwaainetPort + portOffset;
+                      host.port = constants.defaults.kwaainetPort + portOffset + archServiceOffset;
                       guest.port = constants.defaults.kwaainetPort;
                     }
                   ]
                   ++ lib.optionals hasMapServer [
                     {
                       from = "host";
-                      host.port = 3030 + portOffset;
+                      host.port = 3030 + portOffset + archServiceOffset;
                       guest.port = 3030;
                     }
                   ]
                   ++ lib.optionals hasSummitServer [
                     {
                       from = "host";
-                      host.port = 3000 + portOffset;
+                      host.port = 3000 + portOffset + archServiceOffset;
                       guest.port = 3000;
                     }
                   ]
@@ -301,6 +305,18 @@ let
                   port = constants.defaults.kwaainetPort;
                   use_gpu = false;
                   initial_peers = initialPeers;
+                };
+              };
+
+              # Under TCG emulation kwaainet takes much longer to initialise
+              # (p2pd startup, DHT bootstrap).  Increase restart delays and
+              # startup timeout so systemd doesn't thrash-restart the service.
+              systemd.services.kwaainet = lib.mkIf (hasKwaainet && needsCross) {
+                serviceConfig = {
+                  RestartSec = lib.mkForce (if arch == "riscv64" then "30s" else "15s");
+                  TimeoutStartSec = if arch == "riscv64" then 300 else 180;
+                  StartLimitIntervalSec = if arch == "riscv64" then 600 else 300;
+                  StartLimitBurst = 5;
                 };
               };
 

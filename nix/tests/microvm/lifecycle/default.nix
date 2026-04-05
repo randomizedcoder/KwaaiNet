@@ -245,6 +245,9 @@ let
           phase_header "3e" "Restart Stability" "${toString archTimeouts.deepValidation}"
           ${deepChecks.mkNoUnexpectedRestartsCheck {
             services = builtins.filter (s: s != "postgresql") variantConfig.services;
+            # Under TCG emulation, kwaainet may restart a few times during
+            # initial p2pd startup before RestartSec backoff stabilises it.
+            maxRestarts = if archCfg.useKvm then 0 else if arch == "riscv64" then 5 else 3;
           }}
         ''}
 

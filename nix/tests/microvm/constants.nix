@@ -213,6 +213,8 @@ rec {
     start = 10;
     serial = 60;
     virtio = 90;
+    services = 240;     # kwaainet needs extra time with RestartSec=30s backoff
+    resilience = 360;   # restart recovery much slower under RISC-V TCG
     containers = 1200;
     k8s = 3600;
   };
