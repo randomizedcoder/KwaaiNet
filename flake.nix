@@ -17,8 +17,11 @@
 #   # Run checks (clippy + cargo test + smoke test)
 #   nix flake check
 #
-#   # Run the two-node integration test
-#   nix run .#test-two-node
+#   # Run standalone integration tests (no VMs needed)
+#   nix run .#test-two-node              # 2 kwaainet nodes
+#   nix run .#test-two-node-services     # 2 nodes + map-server
+#   nix run .#test-four-node             # 4 kwaainet nodes
+#   nix run .#test-four-node-services    # 4 nodes + map-server
 #
 #   # Run all MicroVM lifecycle tests (Linux, requires KVM)
 #   nix run .#kwaainet-lifecycle-test-all

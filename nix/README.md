@@ -121,6 +121,9 @@ outputs coexist.  Use `make -j` for parallel builds.
 |-------------|---------------|-------------|
 | `make check` | `nix flake check` | smoke test + clippy + cargo test |
 | `make test` | `nix run .#test-two-node` | two-node integration test |
+| — | `nix run .#test-two-node-services` | two-node + map-server integration test |
+| — | `nix run .#test-four-node` | four-node integration test |
+| — | `nix run .#test-four-node-services` | four-node + map-server integration test |
 | `make test-containers` | `nix run .#test-containers` | container image test suite |
 | `make test-everything` | — | full suite: check + test + containers + cross + lifecycle |
 | `make test-lifecycle-all` | `nix run .#kwaainet-lifecycle-test-all` | all 9 variants × 3 architectures |
@@ -149,6 +152,9 @@ packages.kwaainet-container     OCI image stream script — kwaainet + p2pd (Lin
 packages.map-server-container   OCI image stream script — port 3030 (Linux only)
 packages.kwaainet-all-container OCI image — all binaries in one image (Linux only)
 packages.test-two-node          two-node integration test script
+packages.test-two-node-services two-node + map-server integration test script
+packages.test-four-node         four-node integration test script
+packages.test-four-node-services four-node + map-server integration test script
 packages.test-containers        container image test suite (Linux only)
 
 # Cross-compiled packages (x86_64-linux only):
@@ -211,7 +217,7 @@ The Nix setup consists of `flake.nix`, `flake.lock`, and modular files in
 - **`nix/modules/`** — NixOS service modules (kwaainet, map-server, summit-server)
   with shared security hardening and helper library
 - **`nix/k8s-manifests/`** — Kubernetes manifest generation
-- **`nix/tests/`** — test infrastructure (smoke, two-node, containers, cross, microVM lifecycle)
+- **`nix/tests/`** — test infrastructure (smoke, two/four-node, services, containers, cross, microVM lifecycle)
 - **`Makefile`** — convenience targets wrapping nix commands
 
 All Nix packages are sourced from [nixpkgs](https://github.com/NixOS/nixpkgs/)
@@ -256,7 +262,10 @@ nix/
     containers.nix        container image tests (load, size, run)
     cross-smoke.nix       QEMU user-mode smoke test for cross-compiled binaries
     smoke.nix             sandboxed: --help, setup, identity show
-    two-node.nix          integration: two nodes, distinct identities, port config
+    two-node.nix          integration: two kwaainet nodes, distinct identities, port config
+    two-node-services.nix integration: two nodes + map-server, health checks
+    four-node.nix         integration: four kwaainet nodes, distinct identities, port config
+    four-node-services.nix integration: four nodes + map-server, health checks
     microvm/              MicroVM lifecycle testing — 9 variants × 3 architectures (see microvm-testing.md)
 ```
 
@@ -296,8 +305,9 @@ nix/
   (~2.3 GiB from source) to zero — only the actual Rust cross-compilation
   happens locally.
 - **Smoke test in sandbox, integration tests outside** — the smoke test verifies
-  the binary works without network access (`nix flake check`).  The two-node
-  test and container tests need runtime resources (localhost networking, container
+  the binary works without network access (`nix flake check`).  The standalone
+  integration tests (two-node, four-node, and their `-services` variants) and
+  container tests need runtime resources (localhost networking, container
   runtime) so they are runnable scripts, not sandboxed checks.
 - **Version from Cargo.toml** — `crane.nix` reads the workspace version via
   `builtins.fromTOML`, so the Nix package version stays in sync automatically.
