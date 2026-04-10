@@ -16,6 +16,13 @@ let
   lib = pkgs.lib;
   smoke = import ./smoke.nix { inherit pkgs kwaainet; };
   twoNode = import ./two-node.nix { inherit pkgs kwaainet; };
+  fourNode = import ./four-node.nix { inherit pkgs kwaainet; };
+  twoNodeServices = if map-server != null then
+    import ./two-node-services.nix { inherit pkgs kwaainet map-server; }
+  else null;
+  fourNodeServices = if map-server != null then
+    import ./four-node-services.nix { inherit pkgs kwaainet map-server; }
+  else null;
   containerTest = import ./containers.nix { inherit pkgs containers; };
   fullRebuild = import ./full-rebuild.nix { inherit pkgs; };
 
@@ -47,6 +54,15 @@ in
   # Runnable test scripts — run via `nix run .#test-<name>`
   packages = {
     test-two-node = twoNode;
+    test-four-node = fourNode;
+  }
+  // lib.optionalAttrs (twoNodeServices != null) {
+    test-two-node-services = twoNodeServices;
+  }
+  // lib.optionalAttrs (fourNodeServices != null) {
+    test-four-node-services = fourNodeServices;
+  }
+  // {
     full-rebuild = fullRebuild;
   }
   // lib.optionalAttrs (containers != { }) {

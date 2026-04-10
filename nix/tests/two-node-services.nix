@@ -1,22 +1,24 @@
-# Two-node integration test — exercises two kwaainet processes on localhost.
+# Two-node services integration test — exercises kwaainet + map-server on two nodes.
 #
-# Run with:  nix run .#test-two-node
+# Run with:  nix run .#test-two-node-services
 #
 # This test is NOT sandboxed (needs localhost networking).  It:
 #   1. Creates two isolated node environments (separate HOME dirs).
 #   2. Runs `kwaainet setup` + `kwaainet identity show` on each.
 #   3. Verifies both nodes have distinct Peer IDs.
-#   4. Starts both nodes in foreground mode on different ports.
-#   5. Waits for startup, checks status, then tears everything down.
-{ pkgs, kwaainet }:
+#   4. Starts kwaainet + map-server on each node (different ports).
+#   5. Waits for startup, checks status and map-server /health, then tears down.
+{ pkgs, kwaainet, map-server }:
 
 pkgs.writeShellApplication {
-  name = "kwaainet-test-two-node";
+  name = "kwaainet-test-two-node-services";
 
   runtimeInputs = [
     kwaainet
+    map-server
     pkgs.coreutils
     pkgs.gnugrep
+    pkgs.curl
   ];
 
   text = ''
@@ -24,6 +26,8 @@ pkgs.writeShellApplication {
 
     cleanup() {
       echo "--- Cleaning up ---"
+      [ -n "''${MAP_PID_A:-}" ] && kill "$MAP_PID_A" 2>/dev/null || true
+      [ -n "''${MAP_PID_B:-}" ] && kill "$MAP_PID_B" 2>/dev/null || true
       [ -n "''${PID_A:-}" ] && kill "$PID_A" 2>/dev/null || true
       [ -n "''${PID_B:-}" ] && kill "$PID_B" 2>/dev/null || true
       wait 2>/dev/null || true
@@ -75,21 +79,55 @@ pkgs.writeShellApplication {
     HOME="$HOME_B" KWAAINET_SOCKET="$SOCK_B" kwaainet start &
     PID_B=$!
 
+    echo "=== Starting map-server A (port 3030) ==="
+    BIND_ADDR="127.0.0.1:3030" KWAAINET_SOCKET="$SOCK_A" map-server &
+    MAP_PID_A=$!
+
+    echo "=== Starting map-server B (port 3031) ==="
+    BIND_ADDR="127.0.0.1:3031" KWAAINET_SOCKET="$SOCK_B" map-server &
+    MAP_PID_B=$!
+
     # Give nodes time to initialize
     echo "Waiting 5s for nodes to start..."
     sleep 5
 
-    # Check both processes are still running
+    # Check kwaainet processes are still running
     if kill -0 "$PID_A" 2>/dev/null; then
-      echo "PASS: Node A is running (pid $PID_A)"
+      echo "PASS: Node A kwaainet is running (pid $PID_A)"
     else
-      echo "WARN: Node A exited early (may lack network — non-fatal)"
+      echo "WARN: Node A kwaainet exited early (may lack network — non-fatal)"
     fi
 
     if kill -0 "$PID_B" 2>/dev/null; then
-      echo "PASS: Node B is running (pid $PID_B)"
+      echo "PASS: Node B kwaainet is running (pid $PID_B)"
     else
-      echo "WARN: Node B exited early (may lack network — non-fatal)"
+      echo "WARN: Node B kwaainet exited early (may lack network — non-fatal)"
+    fi
+
+    # Check map-server processes are still running
+    if kill -0 "$MAP_PID_A" 2>/dev/null; then
+      echo "PASS: Node A map-server is running (pid $MAP_PID_A)"
+    else
+      echo "WARN: Node A map-server exited early"
+    fi
+
+    if kill -0 "$MAP_PID_B" 2>/dev/null; then
+      echo "PASS: Node B map-server is running (pid $MAP_PID_B)"
+    else
+      echo "WARN: Node B map-server exited early"
+    fi
+
+    # Check map-server health endpoints
+    if curl -sf http://127.0.0.1:3030/health > /dev/null 2>&1; then
+      echo "PASS: Node A map-server /health returned 200"
+    else
+      echo "WARN: Node A map-server /health not reachable"
+    fi
+
+    if curl -sf http://127.0.0.1:3031/health > /dev/null 2>&1; then
+      echo "PASS: Node B map-server /health returned 200"
+    else
+      echo "WARN: Node B map-server /health not reachable"
     fi
 
     # Verify config persisted
@@ -97,6 +135,6 @@ pkgs.writeShellApplication {
     HOME="$HOME_B" kwaainet config show | grep -q "19002" && echo "PASS: Node B port config persisted"
 
     echo ""
-    echo "Two-node integration test complete."
+    echo "Two-node services integration test complete."
   '';
 }

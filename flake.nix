@@ -1,3 +1,34 @@
+# KwaaiNet — Sovereign AI Infrastructure
+#
+# Quick start:
+#
+#   # Enter the development shell (Rust, Go, protobuf, formatters)
+#   nix develop
+#
+#   # Build the default binary (kwaainet)
+#   nix build
+#   ./result/bin/kwaainet --help
+#
+#   # Build a specific package
+#   nix build .#kwaainet
+#   nix build .#map-server
+#   nix build .#p2pd
+#
+#   # Run checks (clippy + cargo test + smoke test)
+#   nix flake check
+#
+#   # Run the two-node integration test
+#   nix run .#test-two-node
+#
+#   # Run all MicroVM lifecycle tests (Linux, requires KVM)
+#   nix run .#kwaainet-lifecycle-test-all
+#
+#   # Format Nix files
+#   nix fmt
+#
+# Inside the dev shell, run `kwaainet-help` for a full command reference.
+# See nix/README.md for detailed documentation.
+#
 {
   description = "KwaaiNet — Sovereign AI Infrastructure";
 
